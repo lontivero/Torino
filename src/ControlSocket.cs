@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -11,33 +12,30 @@ namespace Torino
 {
 	public class ControlSocket
 	{
-		private Socket _socket;
-		private NetworkStream _stream;
+		private Stream _stream;
 		private StreamReader _reader;
-		public IPEndPoint EndPoint { get; }
-
-		public bool IsConnected => _socket.Connected || (_socket.Poll(1000, SelectMode.SelectRead) && _socket.Available == 0);
 
 		public ControlSocket(IPEndPoint endPoint)
 		{
-			EndPoint = endPoint;
-			_socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+			var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+			socket.Connect(endPoint);
+			SetStream(new NetworkStream(socket));
 		}
 
-		public async Task ConnectAsync()
+		public ControlSocket(Stream stream)
 		{
-			await _socket.ConnectAsync(EndPoint);
-			_stream = new NetworkStream(_socket, true);
-			_reader = new StreamReader(_stream, leaveOpen: true);
+			SetStream(stream);
+		}
+
+		private void SetStream(Stream stream)
+		{
+			_stream = stream;
+			_reader = new StreamReader(_stream);
 		}
 
 		public void Close()
 		{
-			if (IsConnected)
-			{
-				_socket.Close();
-				_socket = null;
-			}
+			_reader.Close();
 		}
 
 		public async ValueTask SendAsync(string message, CancellationToken cancellationToken)
@@ -48,11 +46,9 @@ namespace Torino
 
 		private static Regex MessagePrefix = new Regex("^[a-zA-Z0-9]{3}[-+ ]", RegexOptions.Compiled);
 
-		public async Task<string> ReceiveAsync(CancellationToken cancellationToken)
+		public async Task<(string StatusCode, string Divider, string Content)[]> ReceiveAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
-			if (_socket is null) return null;
-
-			StringBuilder parsed = null;
+			List<(string StatusCode, string Divider, string Content)> parsed = null;
 			var line = "";
 			var isFirstLine = true;
 
@@ -68,33 +64,35 @@ namespace Torino
 				{
 					throw new Exception("Badly formatted reply line: beginning is malformed.");
 				}
-				var statusCode = int.Parse(line[..3]);
+				var statusCode = line[..3];
 				var divider = line[3..4];
 				var content = line[4..];
+				var current = (statusCode, divider, content);
 
 				if (isFirstLine)
 				{
 					if (divider == " ") // this is a late reply
 					{
-						return content;
+						return new[] { current };
 					}
 
 					isFirstLine = false;
-					parsed = new StringBuilder();
+					parsed = new List<(string StatusCode, string Divider, string Content)>();
 				}
 				
 				if (divider == "-") // mid-reply line, keep pulling for more content
 				{
-					parsed.AppendLine(content);
+					parsed.Add(current);
 				}
 				else if (divider == " ")
 				{
-					parsed.AppendLine(line);
-					return parsed.ToString();
+					parsed.Add(current);
+					return parsed.ToArray();
 				}
 				else if (divider == "+")
 				{
 					var multiLineContent = new StringBuilder();
+					multiLineContent.AppendLine(content);
 					while (true)
 					{
 						line = await _reader.ReadLineAsync();
@@ -109,7 +107,7 @@ namespace Torino
 						}
 						multiLineContent.AppendLine(line);
 					}
-					return multiLineContent.ToString();
+					return new [] { (statusCode, divider, multiLineContent.ToString()) };
 				}
 			}
 		}
