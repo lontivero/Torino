@@ -31,14 +31,13 @@ namespace Torino
 		{
 			password ??= string.Empty;
 
-			var request = $"AUTHENTICATE \"{password}\"";
-			await SendCommandAsync(request, cancellationToken);
+			await SendCommandAsync(Command.AUTHENTICATE, "\"{password}\"", cancellationToken);
 			IsAuthenticated = true;
 		}
 
 		public async Task CloseAsync(CancellationToken cancellationToken)
 		{
-			await SendCommandAsync("QUIT", cancellationToken);
+			await SendCommandAsync(Command.QUIT, cancellationToken: cancellationToken);
 			this._controlSocket.Close();
 		}
 	
@@ -48,9 +47,14 @@ namespace Torino
 			this._controlSocket.Close();
 		}
 
-		private async Task SendCommandAsync(string command, CancellationToken cancellationToken = default(CancellationToken))
+		private async Task SendCommandAsync(Command command, string args = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			await _controlSocket.SendAsync($"{command}\r\n", cancellationToken);
+			var request = $"{command}";
+			if (args is { })
+			{
+				request = $"{request} {args}";
+			}
+			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken);
 		}
 	}
 }
