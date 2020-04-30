@@ -58,11 +58,11 @@ namespace Torino
 
 				if (line is null)
 				{
-					throw new Exception("Received empty socket content.");
+					throw new ProtocolException("Received empty socket content.");
 				}
 				else if (!MessagePrefix.IsMatch(line))
 				{
-					throw new Exception("Badly formatted reply line: beginning is malformed.");
+					throw new ProtocolException("Badly formatted reply line: beginning is malformed.");
 				}
 				var statusCode = line[..3];
 				var divider = line[3..4];
@@ -99,7 +99,7 @@ namespace Torino
 
 						if (line is null)
 						{
-							throw new Exception("Received empty socket content.");
+							throw new ProtocolException("Received empty socket content.");
 						}
 						if (line == ".")
 						{
