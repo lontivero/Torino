@@ -8,6 +8,9 @@ namespace Torino
 	public class TorController : IDisposable
 	{
 		private ControlSocket _controlSocket;
+		private Channel<Reply> _replyChannel = new Channel<Reply>();
+		private Channel<AsyncReply> _asyncEventNotificationChannel = new Channel<AsyncReply>();
+
 		private CancellationTokenSource _cancellation = new CancellationTokenSource();
 
 		public bool IsAuthenticated { get; private set; }
@@ -24,6 +27,7 @@ namespace Torino
 		public TorController(IPEndPoint endPoint)
 		{
 			_controlSocket = new ControlSocket(endPoint);
+			StartListening();
 		}
 
 
@@ -55,6 +59,28 @@ namespace Torino
 				request = $"{request} {args}";
 			}
 			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken);
+		}
+
+		private void StartListening()
+		{
+			Task.Run(async () =>
+			{
+				while (true)
+				{
+					var response = await _controlSocket.ReceiveAsync(_cancellation.Token).ConfigureAwait(false);
+					var reply = Reply.Parse(response);
+
+					if (reply.Code == ReplyCode.ASYNC_EVENT_NOTIFICATION)
+					{
+						var asyncEvent = AsyncReply.Parse(reply);
+						_asyncEventNotificationChannel.Send(asyncEvent);
+					}
+					else
+					{
+						_replyChannel.Send(reply);
+					}
+				}
+			}, _cancellation.Token);
 		}
 	}
 }
