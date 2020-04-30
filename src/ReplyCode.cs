@@ -20,4 +20,17 @@ namespace Torino
 		UNMANAGED_ENTITY = 555,
 		ASYNC_EVENT_NOTIFICATION = 650
 	}
+
+	internal enum Command
+	{
+		SETCONF,
+		RESETCONF,
+		GETCONF,
+		SETEVENTS,
+		AUTHENTICATE,
+		SAVECONF,
+		SIGNAL,
+		MAPADDRESS,
+		GETINFO
+	}
 }
