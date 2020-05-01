@@ -26,7 +26,7 @@ namespace Torino
 		ASYNC_EVENT_NOTIFICATION = 650
 	}
 
-	public class Reply
+	public class SingleLineReply
 	{
 		public ReplyCode Code { get; }
 		public string Line { get; }
@@ -35,7 +35,11 @@ namespace Torino
 
 		public bool IsOK => Code == ReplyCode.OK;
 
-		internal Reply(ReplyCode code, string line)
+		internal SingleLineReply(Response response)
+			: this(response.Entries[0].StatusCode, response.Entries[0].Content)
+		{}
+
+		internal SingleLineReply(ReplyCode code, string line)
 		{
 			Code = code;
 			Line = line;
@@ -86,10 +90,8 @@ namespace Torino
 			return DateTime.Parse(value[1..^1]);
 		}
 
-		internal static Reply FromResponse((string statusCode, string divider, string content)[] response)
+		internal static SingleLineReply FromResponse((string statusCode, string divider, string content)[] response)
 		{
-
-			//var code = Enum.Parse<ReplyCode>(statusCode);
 			throw new NotImplementedException();
 		}
 	}

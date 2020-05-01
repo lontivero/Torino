@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -46,9 +47,9 @@ namespace Torino
 
 		private static Regex MessagePrefix = new Regex("^[a-zA-Z0-9]{3}[-+ ]", RegexOptions.Compiled);
 
-		public async Task<(string StatusCode, string Divider, string Content)[]> ReceiveAsync(CancellationToken cancellationToken = default(CancellationToken))
+		public async Task<Response> ReceiveAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
-			List<(string StatusCode, string Divider, string Content)> parsed = null;
+			List<ResponseEntry> parsed = null;
 			var line = "";
 			var isFirstLine = true;
 
@@ -67,17 +68,17 @@ namespace Torino
 				var statusCode = line[..3];
 				var divider = line[3..4];
 				var content = line[4..];
-				var current = (statusCode, divider, content);
+				var current = new ResponseEntry(statusCode, divider, content);
 
 				if (isFirstLine)
 				{
 					if (divider == " ") // this is a late reply
 					{
-						return new[] { current };
+						return new Response(current);
 					}
 
 					isFirstLine = false;
-					parsed = new List<(string StatusCode, string Divider, string Content)>();
+					parsed = new List<ResponseEntry>();
 				}
 				
 				if (divider == "-") // mid-reply line, keep pulling for more content
@@ -87,7 +88,7 @@ namespace Torino
 				else if (divider == " ")
 				{
 					parsed.Add(current);
-					return parsed.ToArray();
+					return new Response(parsed);
 				}
 				else if (divider == "+")
 				{
@@ -107,9 +108,39 @@ namespace Torino
 						}
 						multiLineContent.AppendLine(line);
 					}
-					return new [] { (statusCode, divider, multiLineContent.ToString()) };
+					return new Response( new ResponseEntry( statusCode, divider, multiLineContent.ToString()) );
 				}
 			}
 		}
+	}
+
+	public class Response
+	{
+		public ResponseEntry[] Entries { get; }
+		public bool IsOk => Entries[0].StatusCode == ReplyCode.OK;
+
+		public Response(ResponseEntry entry)
+		{
+			Entries = new[] { entry };
+		}
+
+		public Response(IEnumerable<ResponseEntry> entries)
+		{
+			Entries = entries.ToArray();
+		}
+	}
+
+	public class ResponseEntry
+	{
+		public ReplyCode StatusCode { get; }
+		public string Divider { get; }
+		public string Content { get; }
+
+		public ResponseEntry(string statusCode, string divider, string content)
+		{
+			StatusCode = Enum.Parse<ReplyCode>(statusCode);
+			Divider = divider;
+			Content = content;
+		} 
 	}
 }

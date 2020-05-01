@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Torino", "src\Torino.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Torino.Tests", "test\Torino.Tests.csproj", "{FDE74855-4AF1-4772-A8AA-84129176DB68}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Torino.Demo", "demo\Torino.Demo.csproj", "{91C1603F-D296-4759-9996-15EBBCAD1EBD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,5 +46,17 @@ Global
 		{FDE74855-4AF1-4772-A8AA-84129176DB68}.Release|x64.Build.0 = Release|Any CPU
 		{FDE74855-4AF1-4772-A8AA-84129176DB68}.Release|x86.ActiveCfg = Release|Any CPU
 		{FDE74855-4AF1-4772-A8AA-84129176DB68}.Release|x86.Build.0 = Release|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Debug|x64.Build.0 = Debug|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Debug|x86.Build.0 = Debug|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Release|x64.ActiveCfg = Release|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Release|x64.Build.0 = Release|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Release|x86.ActiveCfg = Release|Any CPU
+		{91C1603F-D296-4759-9996-15EBBCAD1EBD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

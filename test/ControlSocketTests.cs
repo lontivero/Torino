@@ -14,39 +14,43 @@ namespace Torino.Tests
 			var network = new MemoryStream();
 			var sut = new ControlSocket(network);
 
-			network.RespondWith("200 OK\r\n");
-			var response = Assert.Single(await sut.ReceiveAsync());
-			Assert.Equal("200", response.StatusCode);
-			Assert.Equal(  " ", response.Divider);
-			Assert.Equal( "OK", response.Content);
+			network.RespondWith("250 OK\r\n");
+			var response = await sut.ReceiveAsync();
+			var entry = Assert.Single(response.Entries);
+			Assert.Equal(ReplyCode.OK, entry.StatusCode);
+			Assert.Equal(  " ", entry.Divider);
+			Assert.Equal( "OK", entry.Content);
 
 			network.RespondWith(
 				"250+info/names=desc/id/* -- Router descriptors by ID.\r\n" + 
 				"desc/name/* -- Router descriptors by nickname.\r\n" +
 				".\r\n" +
 				"250 OK\r\n");
-			response = Assert.Single(await sut.ReceiveAsync());
-			Assert.Equal("250", response.StatusCode);
-			Assert.Equal(  "+", response.Divider);
-			Assert.Contains("\n", response.Content);
-			response = Assert.Single(await sut.ReceiveAsync());
-			Assert.Equal("250", response.StatusCode);
+			response = await sut.ReceiveAsync();
+			entry = Assert.Single(response.Entries);
+			Assert.Equal(ReplyCode.OK, entry.StatusCode);
+			Assert.Equal(  "+", entry.Divider);
+			Assert.Contains("\n", entry.Content);
+			response = await sut.ReceiveAsync();
+			entry = Assert.Single(response.Entries);
+			Assert.Equal(ReplyCode.OK, entry.StatusCode);
 
 			network.RespondWith(
 				"250-PROTOCOLINFO 1\r\n" +
 				"250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"/home/user/.tor/control_auth_cookie\"\r\n" +
 				"250-VERSION Tor=\"0.2.5.1-alpha-dev\"\r\n" +
 				"250 OK\r\n");
-			var responses = await sut.ReceiveAsync();
-			Assert.Equal("250", responses[0].StatusCode);
-			Assert.Equal(  "-", responses[0].Divider);
-			Assert.Equal("PROTOCOLINFO 1", responses[0].Content);
-			Assert.Equal("250", responses[1].StatusCode);
-			Assert.Equal(  "-", responses[1].Divider);
-			Assert.Equal("AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"/home/user/.tor/control_auth_cookie\"", responses[1].Content);
-			Assert.Equal("250", responses[2].StatusCode);
-			Assert.Equal(  "-", responses[2].Divider);
-			Assert.Equal("VERSION Tor=\"0.2.5.1-alpha-dev\"", responses[2].Content);
+			response = await sut.ReceiveAsync();
+			var entries = response.Entries;
+			Assert.Equal(ReplyCode.OK, entries[0].StatusCode);
+			Assert.Equal(  "-", entries[0].Divider);
+			Assert.Equal("PROTOCOLINFO 1", entries[0].Content);
+			Assert.Equal(ReplyCode.OK, entries[1].StatusCode);
+			Assert.Equal(  "-", entries[1].Divider);
+			Assert.Equal("AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"/home/user/.tor/control_auth_cookie\"", entries[1].Content);
+			Assert.Equal(ReplyCode.OK, entries[2].StatusCode);
+			Assert.Equal(  "-", entries[2].Divider);
+			Assert.Equal("VERSION Tor=\"0.2.5.1-alpha-dev\"", entries[2].Content);
 		}
 
 		[Fact]
@@ -56,11 +60,11 @@ namespace Torino.Tests
 			var sut = new ControlSocket(network);
 
 			network.RespondWith("20");
-			var ex = await Assert.ThrowsAsync<Exception>(async () => await sut.ReceiveAsync());
+			var ex = await Assert.ThrowsAsync<ProtocolException>(async () => await sut.ReceiveAsync());
 			Assert.EndsWith("beginning is malformed.", ex.Message);
 
 			network.RespondWith("");
-			ex = await Assert.ThrowsAsync<Exception>(async () => await sut.ReceiveAsync());
+			ex = await Assert.ThrowsAsync<ProtocolException>(async () => await sut.ReceiveAsync());
 			Assert.Equal("Received empty socket content.", ex.Message);
 
 			network.RespondWith(
@@ -68,7 +72,7 @@ namespace Torino.Tests
 				"desc/name/* -- Router descriptors by nickname.\r\n" +
 				"\r\n" +
 				"250 OK\r\n");
-			ex = await Assert.ThrowsAsync<Exception>(async () => await sut.ReceiveAsync());
+			ex = await Assert.ThrowsAsync<ProtocolException>(async () => await sut.ReceiveAsync());
 			Assert.Equal("Received empty socket content.", ex.Message);
 		}
 	}

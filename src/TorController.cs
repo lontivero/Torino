@@ -10,14 +10,14 @@ namespace Torino
 	public class TorController : IDisposable
 	{
 		private ControlSocket _controlSocket;
-		private Channel<Reply> _replyChannel = new Channel<Reply>();
+		private Channel<Response> _replyChannel = new Channel<Response>();
 		private Channel<AsyncReply> _asyncEventNotificationChannel = new Channel<AsyncReply>();
 		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new Dictionary<AsyncEvent, EventHandler<AsyncReply>>(); 
-
+		private Dictionary<string, object> _cache = new Dictionary<string, object>();
 		private CancellationTokenSource _cancellation = new CancellationTokenSource();
-        private DateTime _lastNewnym;
+		private DateTime _lastNewnym;
 
-        public bool IsAuthenticated { get; private set; }
+		public bool IsAuthenticated { get; private set; }
 
 
 		public TorController()
@@ -38,8 +38,35 @@ namespace Torino
 		{
 			password ??= string.Empty;
 
-			await SendCommandAsync(Command.AUTHENTICATE, "\"{password}\"", cancellationToken);
+			await SendCommandAsync(Command.AUTHENTICATE, $"\"{password}\"", cancellationToken);
 			IsAuthenticated = true;
+		}
+
+		public async Task<Version> GetVersionAsync(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (!_cache.TryGetValue("version", out var version))
+			{
+				var reply = await GetInfoAsync("version", cancellationToken);
+				version = Version.Parse(new SingleLineReply(reply).GetString("version"));
+				_cache.Add("version", version);
+			}
+			return (Version)version;
+		}
+
+		public async Task<string> GetUserAsync(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (!_cache.TryGetValue("user", out var user))
+			{
+				var reply = await GetInfoAsync("process/user", cancellationToken);
+				user = new SingleLineReply(reply).GetString("process/user");
+				_cache.Add("user", user);
+			}
+			return (string)user;
+		}
+
+		public async Task<Response> GetInfoAsync(string param, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			return await SendCommandAsync(Command.GETINFO, param);
 		}
 
 		public Task AddEventHandlerAsync(
@@ -79,8 +106,9 @@ namespace Torino
 		public async Task SignalAsync(Signal signal, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var reply = await SendCommandAsync(Command.SIGNAL, signal.ToString(), cancellationToken);
+			var singleLine = new SingleLineReply(reply);
 
-			if (reply.IsOK && signal == Signal.NEWNYM)
+			if (singleLine.IsOK && signal == Signal.NEWNYM)
 			{
 				_lastNewnym = DateTime.UtcNow;
 			}
@@ -98,7 +126,7 @@ namespace Torino
 			this._controlSocket.Close();
 		}
 
-		private async Task<Reply> SendCommandAsync(Command command, string args = null, CancellationToken cancellationToken = default(CancellationToken))
+		private async Task<Response> SendCommandAsync(Command command, string args = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var nextReply = CleanReplyChannelAsync(cancellationToken);
 			var request = $"{command}";
@@ -108,15 +136,17 @@ namespace Torino
 			}
 			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken);
 			var reply = await nextReply;
-			if (reply.Code != ReplyCode.OK && reply.Code != ReplyCode.UNNECESSARY_OPERATION)
+
+			var sl = new SingleLineReply(reply);
+			if (sl.Code != ReplyCode.OK && sl.Code != ReplyCode.UNNECESSARY_OPERATION)
 			{
-				throw new Exception(reply.Line);
+				throw new Exception(sl.Line);
 			}
 
 			return reply;
 		}
 
-		private Task<Reply> CleanReplyChannelAsync(CancellationToken cancellationToken)
+		private Task<Response> CleanReplyChannelAsync(CancellationToken cancellationToken)
 		{
 			var replyTask =  _replyChannel.TakeAsync();
 			while (replyTask.Status == TaskStatus.RanToCompletion)
@@ -142,12 +172,12 @@ namespace Torino
 			{
 				while (true)
 				{
-					var response = await _controlSocket.ReceiveAsync(_cancellation.Token).ConfigureAwait(false);
-					var reply = Reply.FromResponse(response);
+					if (_cancellation.Token.IsCancellationRequested) break;
+					var reply = await _controlSocket.ReceiveAsync(_cancellation.Token).ConfigureAwait(false);
 
-					if (reply.Code == ReplyCode.ASYNC_EVENT_NOTIFICATION)
+					if (reply.Entries[0].StatusCode == ReplyCode.ASYNC_EVENT_NOTIFICATION)
 					{
-						var asyncEvent = AsyncReply.Parse(reply);
+						var asyncEvent = AsyncReply.Parse(new SingleLineReply(reply));
 						_asyncEventNotificationChannel.Send(asyncEvent);
 					}
 					else
