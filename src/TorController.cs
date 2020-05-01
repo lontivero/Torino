@@ -78,7 +78,12 @@ namespace Torino
 
 		public async Task SignalAsync(Signal signal, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			await SendCommandAsync(Command.SIGNAL, signal.ToString(), cancellationToken);
+			var reply = await SendCommandAsync(Command.SIGNAL, signal.ToString(), cancellationToken);
+
+			if (reply.IsOK && signal == Signal.NEWNYM)
+			{
+				_lastNewnym = DateTime.UtcNow;
+			}
 		}
 
 		public async Task CloseAsync(CancellationToken cancellationToken)
@@ -93,14 +98,32 @@ namespace Torino
 			this._controlSocket.Close();
 		}
 
-		private async Task SendCommandAsync(Command command, string args = null, CancellationToken cancellationToken = default(CancellationToken))
+		private async Task<Reply> SendCommandAsync(Command command, string args = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
+			var nextReply = CleanReplyChannelAsync(cancellationToken);
 			var request = $"{command}";
 			if (args is { })
 			{
 				request = $"{request} {args}";
 			}
 			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken);
+			var reply = await nextReply;
+			if (reply.Code != ReplyCode.OK && reply.Code != ReplyCode.UNNECESSARY_OPERATION)
+			{
+				throw new Exception(reply.Line);
+			}
+
+			return reply;
+		}
+
+		private Task<Reply> CleanReplyChannelAsync(CancellationToken cancellationToken)
+		{
+			var replyTask =  _replyChannel.TakeAsync();
+			while (replyTask.Status == TaskStatus.RanToCompletion)
+			{
+				replyTask =  _replyChannel.TakeAsync();
+			}
+			return replyTask;
 		}
 
 		private IEnumerable<string> GetSettledAsyncEventNames()
