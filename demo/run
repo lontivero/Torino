@@ -1,0 +1,11 @@
+#!/bin/sh
+
+DATA_FOLDER=../tor/Data
+../tor/Binary/tor -f $DATA_FOLDER/torrc \
+    --DataDirectory $DATA_FOLDER \
+    --GeoIPFile $DATA_FOLDER/geoip \
+    --GeoIPv6File $DATA_FOLDER/geoip6 \
+    --ControlPort 9051 \
+    --PidFile pid \
+    --ignore-missing-torrc \
+    --HashedControlPassword 16:E56F15796C993FC1604923291BF116C6A895D5DF07210782DEE2029579
