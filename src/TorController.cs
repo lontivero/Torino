@@ -2,6 +2,8 @@
 using System.Threading.Tasks;
 using System.Net;
 using System.Threading;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Torino
 {
@@ -10,6 +12,7 @@ namespace Torino
 		private ControlSocket _controlSocket;
 		private Channel<Reply> _replyChannel = new Channel<Reply>();
 		private Channel<AsyncReply> _asyncEventNotificationChannel = new Channel<AsyncReply>();
+		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new Dictionary<AsyncEvent, EventHandler<AsyncReply>>(); 
 
 		private CancellationTokenSource _cancellation = new CancellationTokenSource();
 
@@ -30,7 +33,6 @@ namespace Torino
 			StartListening();
 		}
 
-
 		public async Task AuthenticateAsync(string password, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			password ??= string.Empty;
@@ -39,12 +41,46 @@ namespace Torino
 			IsAuthenticated = true;
 		}
 
+		public Task AddEventHandlerAsync(
+			AsyncEvent asyncEvent, 
+			EventHandler<AsyncReply> handler, 
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
+			{
+				_asyncEventHandler[asyncEvent] += handler;
+			}
+			else
+			{
+				_asyncEventHandler.Add(asyncEvent, handler);
+				return SetSubscribedEventsAsync(cancellationToken);
+			}
+			return Task.CompletedTask;
+		}
+
+		public Task RemoveEventHandlerAsync(
+			AsyncEvent asyncEvent, 
+			EventHandler<AsyncReply> handler, 
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
+			{
+				_asyncEventHandler[asyncEvent] -= handler;
+				if (_asyncEventHandler[asyncEvent] is null)
+				{
+					_asyncEventHandler.Remove(asyncEvent);
+				}
+				return SetSubscribedEventsAsync(cancellationToken);
+			}
+			return Task.CompletedTask;
+		}
+
 		public async Task CloseAsync(CancellationToken cancellationToken)
 		{
 			await SendCommandAsync(Command.QUIT, cancellationToken: cancellationToken);
 			this._controlSocket.Close();
 		}
-	
+
 		public void Dispose()
 		{
 			this._cancellation.Cancel();
@@ -61,6 +97,16 @@ namespace Torino
 			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken);
 		}
 
+		private IEnumerable<string> GetSettledAsyncEventNames()
+		{
+			return _asyncEventHandler.Where(x => x.Value.GetInvocationList().Any()).Select(x => x.Key.ToString());
+		}
+
+		private Task SetSubscribedEventsAsync(CancellationToken cancellationToken)
+		{
+			return SendCommandAsync(Command.SETEVENTS, string.Join(" ", GetSettledAsyncEventNames()), cancellationToken);
+		}
+
 		private void StartListening()
 		{
 			Task.Run(async () =>
@@ -68,7 +114,7 @@ namespace Torino
 				while (true)
 				{
 					var response = await _controlSocket.ReceiveAsync(_cancellation.Token).ConfigureAwait(false);
-					var reply = Reply.Parse(response);
+					var reply = Reply.FromResponse(response);
 
 					if (reply.Code == ReplyCode.ASYNC_EVENT_NOTIFICATION)
 					{
@@ -81,6 +127,26 @@ namespace Torino
 					}
 				}
 			}, _cancellation.Token);
+
+			Task.Run(async () =>
+			{
+				while (true)
+				{
+					var asyncEvent = await _asyncEventNotificationChannel.TakeAsync(_cancellation.Token);
+
+					if (_asyncEventHandler.TryGetValue(asyncEvent.Event, out var handler))
+					{
+						try
+						{
+							handler.Invoke(this, asyncEvent);
+						}
+						catch(Exception)
+						{
+
+						}
+					}
+				}
+			},  _cancellation.Token);
 		}
 	}
 }

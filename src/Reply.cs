@@ -85,5 +85,12 @@ namespace Torino
 			var value = GetString(key);
 			return DateTime.Parse(value[1..^1]);
 		}
+
+		internal static Reply FromResponse((string statusCode, string divider, string content)[] response)
+		{
+
+			//var code = Enum.Parse<ReplyCode>(statusCode);
+			throw new NotImplementedException();
+		}
 	}
 }
