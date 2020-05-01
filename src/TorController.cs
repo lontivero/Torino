@@ -15,8 +15,9 @@ namespace Torino
 		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new Dictionary<AsyncEvent, EventHandler<AsyncReply>>(); 
 
 		private CancellationTokenSource _cancellation = new CancellationTokenSource();
+        private DateTime _lastNewnym;
 
-		public bool IsAuthenticated { get; private set; }
+        public bool IsAuthenticated { get; private set; }
 
 
 		public TorController()
@@ -73,6 +74,11 @@ namespace Torino
 				return SetSubscribedEventsAsync(cancellationToken);
 			}
 			return Task.CompletedTask;
+		}
+
+		public async Task SignalAsync(Signal signal, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			await SendCommandAsync(Command.SIGNAL, signal.ToString(), cancellationToken);
 		}
 
 		public async Task CloseAsync(CancellationToken cancellationToken)
