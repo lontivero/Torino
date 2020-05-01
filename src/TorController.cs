@@ -42,31 +42,32 @@ namespace Torino
 			IsAuthenticated = true;
 		}
 
-		public async Task<Version> GetVersionAsync(CancellationToken cancellationToken = default(CancellationToken))
+		public async Task<string> GetVersionAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (!_cache.TryGetValue("version", out var version))
 			{
-				var reply = await GetInfoAsync("version", cancellationToken);
-				version = Version.Parse(new SingleLineReply(reply).GetString("version"));
+				var info = await GetInfoAsync("version", cancellationToken);
+				version = info["version"];
 				_cache.Add("version", version);
 			}
-			return (Version)version;
+			return (string)version;
 		}
 
 		public async Task<string> GetUserAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (!_cache.TryGetValue("user", out var user))
 			{
-				var reply = await GetInfoAsync("process/user", cancellationToken);
-				user = new SingleLineReply(reply).GetString("process/user");
+				var info = await GetInfoAsync("process/user", cancellationToken);
+				user = info["process/user"];
 				_cache.Add("user", user);
 			}
 			return (string)user;
 		}
 
-		public async Task<Response> GetInfoAsync(string param, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task<MultiLineReply> GetInfoAsync(string param, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			return await SendCommandAsync(Command.GETINFO, param);
+			var reply = await SendCommandAsync(Command.GETINFO, param);
+			return new MultiLineReply(reply);
 		}
 
 		public Task AddEventHandlerAsync(
@@ -113,6 +114,135 @@ namespace Torino
 				_lastNewnym = DateTime.UtcNow;
 			}
 		}
+
+		public Task<HiddenServiceReply> CreateEphemeralHiddenServiceAsync(
+			string port, 
+			OnionKeyType keyType = OnionKeyType.NEW, 
+			OnionKeyBlob keyBob = OnionKeyBlob.BEST, 
+			OnionFlags flags = OnionFlags.None,
+			int maxStreams = 0,
+			bool waitForPublication = false,
+			CancellationToken cancellationToken = default(CancellationToken)) => 
+				CreateEphemeralHiddenServiceAsync( new Dictionary<string, string>{ { port, port} }, 
+					keyType, keyBob, flags, maxStreams, waitForPublication, cancellationToken);
+
+		public async Task<HiddenServiceReply> CreateEphemeralHiddenServiceAsync(
+			IDictionary<string, string> ports, 
+			OnionKeyType keyType = OnionKeyType.NEW, 
+			OnionKeyBlob keyBob = OnionKeyBlob.BEST, 
+			OnionFlags flags = OnionFlags.None,
+			int maxStreams = 0,
+			bool waitForPublication = false,
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var serviceId = string.Empty;
+			var publication = new TaskCompletionSource<int>();
+
+			var uploading = new HashSet<string>();
+			var failures = 0;
+			void Test(object sender, AsyncReply e)
+			{
+				var hsDescEvent = e as HiddenServiceDescriptorEvent;
+				if (hsDescEvent.Action == HsDescActions.UPLOADED && hsDescEvent.Address == serviceId && uploading.Contains(hsDescEvent.HsDir))
+				{
+					publication.TrySetResult(uploading.Count);
+				}
+				else if (hsDescEvent.Action == HsDescActions.FAILED && hsDescEvent.Address == serviceId && uploading.Contains(hsDescEvent.HsDir))
+				{
+					failures++;
+					if (failures == uploading.Count())
+					{
+						publication.TrySetException(new Exception($"Fail to publish hidden servive: {serviceId}"));
+					}
+				}
+				else if (hsDescEvent.Action == HsDescActions.UPLOAD && hsDescEvent.Address == serviceId)
+				{
+					uploading.Add(hsDescEvent.HsDir);
+				}
+			}
+
+			if (waitForPublication)
+			{
+				await AddEventHandlerAsync(AsyncEvent.HS_DESC, Test);
+			}
+
+			var request = $"{keyType}:{keyBob}";
+			var flagsStr = flags switch
+			{
+				OnionFlags.Detach => "Flags=Detach",
+				OnionFlags.DiscardPK => "Flags=DiscardPK",
+				OnionFlags.Detach | OnionFlags.DiscardPK => "Flags=Detach,DiscardPK",
+				_ => null 
+			};
+
+
+			if (flagsStr is { })
+			{
+				request = $"{request} {flagsStr}";
+			}
+
+			if (maxStreams > 0)
+			{
+				request = $"{request} MaxStreams={maxStreams}";
+			}
+
+			var portMappingList = new List<string>(); 
+			foreach(var portMapping in ports)
+			{
+				if (portMapping.Key == portMapping.Value)
+				{
+					portMappingList.Add($"Port={portMapping.Key}");
+				}
+				else
+				{
+					portMappingList.Add($"Port={portMapping.Key}:{portMapping.Value}");
+				}
+			}
+			request = $"{request} {string.Join(" ", portMappingList)}";
+
+			var reply = await SendCommandAsync(Command.ADD_ONION, request, cancellationToken);
+			var hsReply = new HiddenServiceReply(reply);
+			serviceId = hsReply.ServiceId;
+
+			if (waitForPublication)
+			{
+				try
+				{
+					await publication.Task;
+				}
+				finally
+				{
+					await RemoveEventHandlerAsync(AsyncEvent.HS_DESC, Test);
+				}
+			}
+			return new HiddenServiceReply(reply);
+		}
+
+
+		public async Task<string[]> ListEphemeralHiddenServicesAsync(
+			bool includeDetached = false, 
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var result = await GetInfoAsync("onions/current");
+			var hsList = new List<string>();
+			hsList.AddRange(result["onions/current"].Split('\n', StringSplitOptions.RemoveEmptyEntries));
+
+			if (includeDetached)
+			{
+				result = await GetInfoAsync("onions/detached");
+				
+				hsList.AddRange(result["onions/detached"].Split('\n', StringSplitOptions.RemoveEmptyEntries));
+			}
+			return hsList.ToArray();
+		}
+
+		public async Task<bool> RemoveHiddenServiceAsync(
+			string serviceId,
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var reply = await SendCommandAsync(Command.DEL_ONION, serviceId, cancellationToken);
+			return reply.IsOk;
+		}	
 
 		public async Task CloseAsync(CancellationToken cancellationToken)
 		{
@@ -191,6 +321,9 @@ namespace Torino
 			{
 				while (true)
 				{
+					try
+					{
+					if (_cancellation.Token.IsCancellationRequested) break;
 					var asyncEvent = await _asyncEventNotificationChannel.TakeAsync(_cancellation.Token);
 
 					if (_asyncEventHandler.TryGetValue(asyncEvent.Event, out var handler))
@@ -203,6 +336,11 @@ namespace Torino
 						{
 
 						}
+					}
+					}
+					catch(Exception e)
+					{
+						Console.WriteLine("!!!!!!!!!!!!!" + e);
 					}
 				}
 			},  _cancellation.Token);

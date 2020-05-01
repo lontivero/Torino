@@ -95,4 +95,86 @@ namespace Torino
 			throw new NotImplementedException();
 		}
 	}
+
+	public class MultiLineReply
+	{
+		private Dictionary<string, string> _values = new Dictionary<string, string>();
+
+		public string this[string key]
+		{
+			get
+			{
+				if (!_values.TryGetValue(key, out var value))
+				{
+					return string.Empty;
+				}
+				return value;
+			}
+		}
+
+		internal MultiLineReply(Response response)
+		{
+			foreach(var entry in response.Entries)
+			{
+				if (entry.StatusCode == ReplyCode.OK && entry.Divider == " " && entry.Content == "OK")
+					break;
+
+				var parts = entry.Content.Split('=', StringSplitOptions.RemoveEmptyEntries);
+				_values.Add(parts[0], parts[1]);
+			}
+		}
+	}
+
+	public class HiddenServiceReply : MultiLineReply
+	{
+		public string ServiceId { get; }
+		public string PrivateKey { get; }
+		public OnionKeyType KeyType { get; }
+		public string UserName { get; }
+		public string Password { get; }
+
+
+		public HiddenServiceReply(Response response)
+			: base(response)
+		{
+			ServiceId = this["ServiceID"];
+			var pk = this["PrivateKey"];
+			if (!string.IsNullOrEmpty(pk))
+			{
+				var parts = pk.Split(':');
+				PrivateKey = parts[1];
+				KeyType = Enum.Parse<OnionKeyType>(parts[0].Replace("-",""));
+			}
+			else
+			{
+				PrivateKey = string.Empty;
+			}
+
+			var auth = this["ClientAuth"];
+			if (!string.IsNullOrEmpty(auth))
+			{
+				var parts = pk.Split(':');
+				UserName = parts[0];
+				Password = parts[1];
+			}
+			else
+			{
+				UserName = string.Empty;
+				Password = string.Empty;
+			}
+
+		}
+
+/*		
+
+		  self.private_key_type, self.private_key = value.split(':', 1)
+		elif key == 'ClientAuth':
+		  if ':' not in value:
+			raise stem.ProtocolError("ADD_ONION ClientAuth lines should be of the form 'ClientAuth=[username]:[credential]: %s" % self)
+
+		  username, credential = value.split(':', 1)
+		  self.client_auth[username] = credential
+
+*/
+	}
 }
