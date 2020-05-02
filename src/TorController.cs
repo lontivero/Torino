@@ -87,7 +87,7 @@ namespace Torino
 			return Task.CompletedTask;
 		}
 
-		public Task RemoveEventHandlerAsync(
+		public async Task RemoveEventHandlerAsync(
 			AsyncEvent asyncEvent, 
 			EventHandler<AsyncReply> handler, 
 			CancellationToken cancellationToken = default(CancellationToken))
@@ -99,9 +99,8 @@ namespace Torino
 				{
 					_asyncEventHandler.Remove(asyncEvent);
 				}
-				return SetSubscribedEventsAsync(cancellationToken);
+				await SetSubscribedEventsAsync(cancellationToken);
 			}
-			return Task.CompletedTask;
 		}
 
 		public async Task SignalAsync(Signal signal, CancellationToken cancellationToken = default(CancellationToken))
@@ -242,7 +241,34 @@ namespace Torino
 		{
 			var reply = await SendCommandAsync(Command.DEL_ONION, serviceId, cancellationToken);
 			return reply.IsOk;
-		}	
+		}
+
+		public async Task<string> ResolveAsync(string address, bool isReverse = false, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var tcs = new TaskCompletionSource<string>();
+			async void Test(object sender, AsyncReply e)
+			{
+				var addmapEvent = e as NewAddressMappingEvent;
+				if (addmapEvent.Address == address)
+				{
+					tcs.TrySetResult(addmapEvent.NewAddress);
+					if (!_cancellation.IsCancellationRequested)
+					{
+						await RemoveEventHandlerAsync(AsyncEvent.ADDRMAP, Test, cancellationToken);
+					}
+				}
+			}
+			await AddEventHandlerAsync(AsyncEvent.ADDRMAP, Test, cancellationToken);
+
+			var args = $"{address}";
+			if (isReverse)
+			{
+				args = $"mode=reverse {args}";
+			}
+			var reply = await SendCommandAsync(Command.RESOLVE, args, cancellationToken);
+
+			return await tcs.Task;
+		}
 
 		public async Task CloseAsync(CancellationToken cancellationToken)
 		{
@@ -260,7 +286,7 @@ namespace Torino
 		{
 			var nextReply = CleanReplyChannelAsync(cancellationToken);
 			var request = $"{command}";
-			if (args is { })
+			if (!string.IsNullOrEmpty(args))
 			{
 				request = $"{request} {args}";
 			}
@@ -291,9 +317,9 @@ namespace Torino
 			return _asyncEventHandler.Where(x => x.Value.GetInvocationList().Any()).Select(x => x.Key.ToString());
 		}
 
-		private Task SetSubscribedEventsAsync(CancellationToken cancellationToken)
+		private async Task SetSubscribedEventsAsync(CancellationToken cancellationToken)
 		{
-			return SendCommandAsync(Command.SETEVENTS, string.Join(" ", GetSettledAsyncEventNames()), cancellationToken);
+			await SendCommandAsync(Command.SETEVENTS, string.Join(" ", GetSettledAsyncEventNames()), cancellationToken);
 		}
 
 		private void StartListening()
@@ -321,8 +347,6 @@ namespace Torino
 			{
 				while (true)
 				{
-					try
-					{
 					if (_cancellation.Token.IsCancellationRequested) break;
 					var asyncEvent = await _asyncEventNotificationChannel.TakeAsync(_cancellation.Token);
 
@@ -336,11 +360,6 @@ namespace Torino
 						{
 
 						}
-					}
-					}
-					catch(Exception e)
-					{
-						Console.WriteLine("!!!!!!!!!!!!!" + e);
 					}
 				}
 			},  _cancellation.Token);

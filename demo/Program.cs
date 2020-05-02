@@ -16,6 +16,12 @@ namespace Torino.Demo
 		
 				Console.WriteLine($"Tor version: {version}");
 				Console.WriteLine($"Tor user   : {user}");
+
+				var ip = await control.ResolveAsync("google.com");
+				var domain = await control.ResolveAsync(ip, isReverse: true);
+				Console.WriteLine($"google.com : {ip}");
+				Console.WriteLine($"{ip} : {domain}");
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 			}
 
 
@@ -27,11 +33,12 @@ namespace Torino.Demo
 					(sender, e) => Console.WriteLine($"[EVENT] {e.Event} -> {e.Line}"));
 
 				await control.SignalAsync(Signal.DORMANT);
-				Console.WriteLine("Time to sleep");
+				Console.WriteLine("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Time to sleep");
 				await Task.Delay(5_000);
-				Console.WriteLine("Waking up");
+				Console.WriteLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Waking up");
 				await control.SignalAsync(Signal.ACTIVE);
 				await Task.Delay(3_000);
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 			}
 
 
@@ -50,6 +57,7 @@ namespace Torino.Demo
 					Console.WriteLine($"[] {hs}");
 					await control.RemoveHiddenServiceAsync(hs);
 				}
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 			}
 
 			using(var control = new TorController(IPAddress.Loopback, 9051))
@@ -57,7 +65,6 @@ namespace Torino.Demo
 				await control.AuthenticateAsync("pwd");
 				// await control.SignalAsync(Signal.SHUTDOWN);
 			}
-
 
 			Console.WriteLine("Goodbye. Enjoy it!");
 		}

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Torino
 {
@@ -32,8 +33,8 @@ namespace Torino
 		public string Line { get; }
 		protected string[] Parts { get; }
 		protected IDictionary<string, string> Pairs { get; }
-
 		public bool IsOK => Code == ReplyCode.OK;
+
 
 		internal SingleLineReply(Response response)
 			: this(response.Entries[0].StatusCode, response.Entries[0].Content)
@@ -43,11 +44,41 @@ namespace Torino
 		{
 			Code = code;
 			Line = line;
-			Parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+			Parts = SplitLine(line).ToArray();
 			Pairs = Parts.Where(x => x.Contains('=')).Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
 		}
 
-		internal string GetString(string key)
+		private IEnumerable<string> SplitLine(string line)
+		{
+			var begin = 0;
+			var end = begin + 1;
+			var inQuote = false;
+
+			while (end < line.Length)
+			{
+				if (line[end] == '"')
+				{
+					inQuote = !inQuote;
+					end++;
+				}
+				else if (line[end] == ' ' && !inQuote)
+				{
+					yield return line.Substring(begin, end - begin);
+					begin = end + 1;
+					end = begin;
+				}
+				else
+				{
+					end++;
+				}
+			}
+			if (begin < end )
+			{
+				yield return line.Substring(begin);
+			}
+		}
+
+        internal string GetString(string key)
 		{
 			if (key[0] == '@')
 			{
