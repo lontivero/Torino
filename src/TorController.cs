@@ -233,15 +233,14 @@ namespace Torino
 			bool includeDetached = false, 
 			CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var result = await GetInfoAsync("onions/current");
+			var reply = await GetInfoAsync("onions/current");
 			var hsList = new List<string>();
-			hsList.AddRange(result["onions/current"].Split('\n', StringSplitOptions.RemoveEmptyEntries));
+			hsList.AddRange(reply.Keys.Skip(1).Select(key => reply[key]));
 
 			if (includeDetached)
 			{
-				result = await GetInfoAsync("onions/detached");
-				
-				hsList.AddRange(result["onions/detached"].Split('\n', StringSplitOptions.RemoveEmptyEntries));
+				reply = await GetInfoAsync("onions/detached");
+				hsList.AddRange(reply.Keys.Skip(1).Select(key => reply[key]));
 			}
 			return hsList.ToArray();
 		}
@@ -301,6 +300,12 @@ namespace Torino
 		public async Task SaveConfigAsync(bool force = false, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			await SendCommandAsync(Command.SAVECONF, force ? "force": "", cancellationToken: cancellationToken);
+		}
+
+		public async Task<CircuitEvent[]> GetCircuitsAsync(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var reply = await GetInfoAsync("circuit-status", cancellationToken);
+			return reply.Keys.Skip(1).Select(key => new CircuitEvent(reply[key])).ToArray();
 		}
 
 		private object GetCached<T>(string key, string @namespace = null)
@@ -413,14 +418,7 @@ namespace Torino
 
 					if (_asyncEventHandler.TryGetValue(asyncEvent.Event, out var handler))
 					{
-						try
-						{
-							handler.Invoke(this, asyncEvent);
-						}
-						catch(Exception)
-						{
-
-						}
+						handler?.Invoke(this, asyncEvent);
 					}
 				}
 			},  _cancellation.Token);

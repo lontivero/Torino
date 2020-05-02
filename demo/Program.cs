@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 
@@ -11,6 +12,8 @@ namespace Torino.Demo
 			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
+				Console.WriteLine("General info");
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 				var protocolInfo = await control.GetProtocolInfoAsync();
 				var version = await control.GetVersionAsync();
 				var user = await control.GetUserAsync();
@@ -32,14 +35,46 @@ namespace Torino.Demo
 				var domain = await control.ResolveAsync(ip, isReverse: true);
 				Console.WriteLine($"  - google.com   : {ip}");
 				Console.WriteLine($"  - {ip} : {domain}");
-				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+				Console.WriteLine();
 			}
-
 
 			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
-				var handler = new EventHandler<AsyncReply>((sender, e) => Console.WriteLine($"[EVENT] Bandwidth -> {e.Line}"));
+				Console.WriteLine("Circuits");
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+				var circuits = await control.GetCircuitsAsync();
+				foreach(var circ in circuits)
+				{
+					var pathLength = Math.Min(100, circ.Path.Length);
+					Console.WriteLine($"{circ.Id} {circ.Status} {circ.TimeCreated} [{string.Join(", ", circ.BuildFlags)}] {circ.Path.Substring(0, pathLength)}...");
+				}
+				/*
+				//Console.WriteLine(" Dropping Guard...");
+				//await control.DropGuardsAsync(); 
+				Console.WriteLine(" Renewing circuits...");
+				await control.SignalAsync(Signal.NEWNYM);
+				await Task.Delay(30_000);
+				circuits = await control.GetCircuitsAsync();
+				foreach(var circ in circuits)
+				{
+					var pathLength = Math.Min(110, circ.Path.Length);
+					Console.WriteLine($"{circ.Id} {circ.Status} {circ.TimeCreated} [{string.Join(", ", circ.BuildFlags)}] {circ.Path.Substring(0, pathLength)}...");
+				}
+				*/
+				Console.WriteLine();
+			}
+
+			using(var control = new TorController())
+			{
+				await control.AuthenticateAsync("pwd");
+				Console.WriteLine("Bandwidth event (Read/Write)");
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+
+				var handler = new EventHandler<AsyncReply>((sender, e) => {
+					var ev = (BandwidthEvent)e;
+					Console.WriteLine($"[EVENT] Bandwidth -> Read: {ev.BytesRead} bytes\t\t Written: {ev.BytesWritten} bytes");
+				});
 				await control.AddEventHandlerAsync(AsyncEvent.BW, handler);
 
 				await control.SignalAsync(Signal.DORMANT);
@@ -48,31 +83,78 @@ namespace Torino.Demo
 				await Task.Delay(4_000);
 				await control.RemoveEventHandlerAsync(AsyncEvent.BW, handler); 
 
-				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+				Console.WriteLine();
 			}
 
 
 			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
-
-				var hs1 = await control.CreateEphemeralHiddenServiceAsync("8081", flags: OnionFlags.DiscardPK, waitForPublication: true);
-				var hs2 = await control.CreateEphemeralHiddenServiceAsync("8082", waitForPublication: true);
-				Console.WriteLine($"Service ID : {hs1.ServiceId}");
-				Console.WriteLine($"Service ID : {hs2.ServiceId}");
-
-				var hsList = await control.ListEphemeralHiddenServicesAsync();
-				foreach(var hs in hsList)
+				Console.WriteLine("Ephemeral Hidden Services");
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+				Console.Write("Creating....");
+				void DisplayUpload(object sender, AsyncReply e)
 				{
-					Console.WriteLine($"[] {hs}");
-					await control.RemoveHiddenServiceAsync(hs);
+					var ev = (HiddenServiceDescriptorEvent)e;
+					if (ev.Action == HsDescActions.UPLOADED || ev.Action == HsDescActions.UPLOAD || ev.Action == HsDescActions.CREATED)
+					{
+						Console.WriteLine($"{ev.Action} {ev.Address} -> {ev.HsDir}");
+					}
 				}
-				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+				await control.AddEventHandlerAsync(AsyncEvent.HS_DESC, DisplayUpload);
+
+				var hs1 = control.CreateEphemeralHiddenServiceAsync("8081", flags: OnionFlags.DiscardPK, waitForPublication: true);
+				var hs2 = control.CreateEphemeralHiddenServiceAsync("8082", waitForPublication: true);
+				var hs = await Task.WhenAll(hs1, hs2);
+				await control.RemoveEventHandlerAsync(AsyncEvent.HS_DESC, DisplayUpload);
+				Console.WriteLine("Done");
+				Console.WriteLine($"CREATED : {hs[0].ServiceId}");
+				Console.WriteLine($"CREATED : {hs[1].ServiceId}");
+				Console.WriteLine();
+
+				Console.WriteLine("Listing...");
+				var hsList = await control.ListEphemeralHiddenServicesAsync();
+				for(var i = 0; i < hsList.Length; i++)
+				{
+					Console.WriteLine($"{i}: {hsList[i]}");
+				}
+				Console.WriteLine();
+
+				Console.WriteLine("Removing...");
+				for(var i = 0; i < hsList.Length; i++)
+				{
+					var hsItem = hsList[i];
+					await control.RemoveHiddenServiceAsync(hsItem);
+					Console.WriteLine($"{hsItem} REMOVED");
+				}
+
+				Console.WriteLine();
 			}
 
 			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
+				var handler = new EventHandler<AsyncReply>((sender, e) =>
+					Console.WriteLine($"[EVENT] {e.Event} -> {e.Line.Substring(0, Math.Min(110, e.Line.Length))}"));
+
+				Console.WriteLine("Events");
+				Console.WriteLine("------------------------------------------------------------------------------------------------------");
+
+				Console.WriteLine("Circuit events....");
+				await control.AddEventHandlerAsync(AsyncEvent.CIRC, handler);
+				await Task.Delay(4_000);
+				await control.RemoveEventHandlerAsync(AsyncEvent.CIRC, handler); 
+
+				Console.WriteLine("Stream events....");
+				await control.AddEventHandlerAsync(AsyncEvent.STREAM, handler);
+				await Task.Delay(6_000);
+				await control.RemoveEventHandlerAsync(AsyncEvent.STREAM, handler); 
+
+				Console.WriteLine("Debug events....");
+				await control.AddEventHandlerAsync(AsyncEvent.DEBUG, handler);
+				await Task.Delay(500);
+				await control.RemoveEventHandlerAsync(AsyncEvent.DEBUG, handler); 
+
 				// await control.SignalAsync(Signal.SHUTDOWN);
 			}
 

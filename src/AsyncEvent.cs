@@ -155,6 +155,10 @@ namespace Torino
 		public string SocksUsername => GetString("SOCKS_USERNAME").Replace("\"", "");
 		public string SocksPassword => GetString("SOCKS_PASSWORD").Replace("\"", "");
 
+		internal CircuitEvent(string line)
+			: this(new ResponseEntry("650", " ", "CIRC " + line))
+		{}
+
 		internal CircuitEvent(ResponseEntry reply)
 			: base(reply)
 		{

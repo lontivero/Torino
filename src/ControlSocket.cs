@@ -144,7 +144,9 @@ namespace Torino
 			Divider = divider;
 			Content = content;
 			Parts = SplitLine(content).ToArray();
-			Pairs = Parts.Where(x => x.Contains('=')).Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
+			Pairs = divider == "+"
+				? new Dictionary<string, string>()
+				: Parts.Where(x => x.Contains('=')).Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
 		}
 
 		private IEnumerable<string> SplitLine(string line)

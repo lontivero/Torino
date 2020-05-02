@@ -55,6 +55,7 @@ namespace Torino
 	public class MultiLineReply
 	{
 		private Dictionary<string, string> _values = new Dictionary<string, string>();
+		public string[] Keys => _values.Keys.ToArray();
 
 		public string this[string key]
 		{
@@ -75,10 +76,21 @@ namespace Torino
 				if (entry.StatusCode == ReplyCode.OK && entry.Divider == " " && entry.Content == "OK")
 					break;
 
-				var parts = entry.Content.Split('=', StringSplitOptions.RemoveEmptyEntries);
-				if (parts.Length > 1)
+				if (entry.Divider == "+")
 				{
-					_values.Add(parts[0], parts[1]);
+					var lines = entry.Content.Split("\n", StringSplitOptions.RemoveEmptyEntries);
+					for(var i = 0; i< lines.Length; i++)
+					{
+						_values.Add(i.ToString(), lines[i]);
+					}
+				}
+				else if (entry.Divider == "-")
+				{
+					var parts = entry.Content.Split('=', StringSplitOptions.RemoveEmptyEntries);
+					if (parts.Length > 1)
+					{
+						_values.Add(parts[0], parts[1]);
+					}
 				}
 			}
 		}
@@ -153,27 +165,5 @@ namespace Torino
 				}
 			}
 		}
-
-/*
-
-    InfoLine = AuthLine / VersionLine / OtherLine
-
-     AuthLine = "250-AUTH" SP "METHODS=" AuthMethod *("," AuthMethod)
-                       *(SP "COOKIEFILE=" AuthCookieFile) CRLF
-     VersionLine = "250-VERSION" SP "Tor=" TorVersion OptArguments CRLF
-
-     AuthMethod =
-      "NULL"           / ; No authentication is required
-      "HASHEDPASSWORD" / ; A controller must supply the original password
-      "COOKIE"         / ; ... or supply the contents of a cookie file
-      "SAFECOOKIE"       ; ... or prove knowledge of a cookie file's contents
-
-     AuthCookieFile = QuotedString
-     TorVersion = QuotedString
-
-     OtherLine = "250-" Keyword OptArguments CRLF
-
-    PIVERSION: 1*DIGIT
-*/
 	}
 }
