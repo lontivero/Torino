@@ -270,7 +270,12 @@ namespace Torino
 			return await tcs.Task;
 		}
 
-		public async Task CloseAsync(CancellationToken cancellationToken)
+		public async Task DropGuards(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			await SendCommandAsync(Command.DROPGUARDS, cancellationToken: cancellationToken);
+		}
+
+		public async Task CloseAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
 			await SendCommandAsync(Command.QUIT, cancellationToken: cancellationToken);
 			this._controlSocket.Close();

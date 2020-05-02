@@ -8,7 +8,7 @@ namespace Torino.Demo
 	{
 		static async Task Main(string[] args)
 		{
-			using(var control = new TorController(IPAddress.Loopback, 9051))
+			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
 				var version = await control.GetVersionAsync();
@@ -25,7 +25,7 @@ namespace Torino.Demo
 			}
 
 
-			using(var control = new TorController(IPAddress.Loopback, 9051))
+			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
 
@@ -42,7 +42,7 @@ namespace Torino.Demo
 			}
 
 
-			using(var control = new TorController(IPAddress.Loopback, 9051))
+			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
 
@@ -60,7 +60,7 @@ namespace Torino.Demo
 				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 			}
 
-			using(var control = new TorController(IPAddress.Loopback, 9051))
+			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
 				// await control.SignalAsync(Signal.SHUTDOWN);
