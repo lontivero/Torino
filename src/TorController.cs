@@ -34,6 +34,39 @@ namespace Torino
 			StartListening();
 		}
 
+		public Task AddEventHandlerAsync(
+			AsyncEvent asyncEvent, 
+			EventHandler<AsyncReply> handler, 
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
+			{
+				_asyncEventHandler[asyncEvent] += handler;
+			}
+			else
+			{
+				_asyncEventHandler.Add(asyncEvent, handler);
+				return SetSubscribedEventsAsync(cancellationToken);
+			}
+			return Task.CompletedTask;
+		}
+
+		public async Task RemoveEventHandlerAsync(
+			AsyncEvent asyncEvent, 
+			EventHandler<AsyncReply> handler, 
+			CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
+			{
+				_asyncEventHandler[asyncEvent] -= handler;
+				if (_asyncEventHandler[asyncEvent] is null)
+				{
+					_asyncEventHandler.Remove(asyncEvent);
+				}
+				await SetSubscribedEventsAsync(cancellationToken);
+			}
+		}
+
 		public async Task AuthenticateAsync(string password, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			password ??= string.Empty;
@@ -79,39 +112,6 @@ namespace Torino
 		{
 			var reply = await SendCommandAsync(Command.GETINFO, param);
 			return new MultiLineReply(reply);
-		}
-
-		public Task AddEventHandlerAsync(
-			AsyncEvent asyncEvent, 
-			EventHandler<AsyncReply> handler, 
-			CancellationToken cancellationToken = default(CancellationToken))
-		{
-			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
-			{
-				_asyncEventHandler[asyncEvent] += handler;
-			}
-			else
-			{
-				_asyncEventHandler.Add(asyncEvent, handler);
-				return SetSubscribedEventsAsync(cancellationToken);
-			}
-			return Task.CompletedTask;
-		}
-
-		public async Task RemoveEventHandlerAsync(
-			AsyncEvent asyncEvent, 
-			EventHandler<AsyncReply> handler, 
-			CancellationToken cancellationToken = default(CancellationToken))
-		{
-			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
-			{
-				_asyncEventHandler[asyncEvent] -= handler;
-				if (_asyncEventHandler[asyncEvent] is null)
-				{
-					_asyncEventHandler.Remove(asyncEvent);
-				}
-				await SetSubscribedEventsAsync(cancellationToken);
-			}
 		}
 
 		public async Task SignalAsync(Signal signal, CancellationToken cancellationToken = default(CancellationToken))
@@ -291,6 +291,34 @@ namespace Torino
 			var reply = await SendCommandAsync(Command.PROTOCOLINFO, cancellationToken: cancellationToken);
 			var protocolInfo = new ProtocolInfoReply(reply);
 			return protocolInfo;
+		}
+
+		private object GetCached<T>(string key, string @namespace = null)
+		{
+			var lookupKey = string.IsNullOrWhiteSpace(@namespace)
+				? key
+				: $"{@namespace}:{key}";
+			if(_cache.TryGetValue(lookupKey, out var value))
+			{
+				return (T)value;
+			}
+			return default(T);
+		}
+
+		private Dictionary<string, object> GetCachedValues(string[] keys, string @namespace = null)
+		{
+			var ret = new Dictionary<string, object>();
+			foreach(var key in keys)
+			{
+				var lookupKey = string.IsNullOrWhiteSpace(@namespace)
+					? key
+					: $"{@namespace}:{key}";
+				if(_cache.TryGetValue(lookupKey, out var value))
+				{
+					ret.Add(lookupKey, value);
+				}
+			}
+			return ret;
 		}
 
 		public async Task CloseAsync(CancellationToken cancellationToken = default(CancellationToken))
