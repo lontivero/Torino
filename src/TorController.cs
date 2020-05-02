@@ -293,6 +293,16 @@ namespace Torino
 			return protocolInfo;
 		}
 
+		public async Task LoadConfigAsync(string configPath, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			await SendCommandAsync(Command.LOADCONF, configPath, cancellationToken: cancellationToken);
+		}
+
+		public async Task SaveConfigAsync(bool force = false, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			await SendCommandAsync(Command.SAVECONF, force ? "force": "", cancellationToken: cancellationToken);
+		}
+
 		private object GetCached<T>(string key, string @namespace = null)
 		{
 			var lookupKey = string.IsNullOrWhiteSpace(@namespace)
