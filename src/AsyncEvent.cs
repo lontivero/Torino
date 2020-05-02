@@ -9,14 +9,14 @@ namespace Torino
 		public AsyncEvent Event { get; }
 		public string RawString => Line;
 
-		protected AsyncReply(ReplyCode code, string line)
-			: base(code, line)
+		protected AsyncReply(ResponseEntry entry)
+			: base(entry)
 		{
-			var eventName = GetString("@0");
+			var eventName = Entry.GetString("@0");
 			Event = Enum.Parse<AsyncEvent>(eventName);
 		}
 
-		internal static AsyncReply Parse(SingleLineReply reply)
+		internal static AsyncReply Parse(ResponseEntry reply)
 		{
 			var eventName = reply.GetString("@0");
 			var eventCode = Enum.Parse<AsyncEvent>(eventName);
@@ -71,15 +71,15 @@ namespace Torino
 		public DateTime Expires => GetISOTime("EXPIRES");
 		public bool Cached => GetString("CACHED").Contains("YES", StringComparison.InvariantCultureIgnoreCase);
 
-		internal NewAddressMappingEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal NewAddressMappingEvent(ResponseEntry reply)
+			: base(reply)
 		{}
 	}
 
 	public class AuthDirNewDescsEvent : AsyncReply
 	{
-		public AuthDirNewDescsEvent(SingleLineReply reply) 
-			: base(reply.Code, reply.Line)
+		public AuthDirNewDescsEvent(ResponseEntry reply) 
+			: base(reply)
 		{}
 	}
 
@@ -95,8 +95,8 @@ namespace Torino
 		public int CloseTimeout => GetInt("CLOSE_MS");
 		public float CloseRate => GetFloat("CLOSE_RATE");
 
-		internal BuildTimeoutSetEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal BuildTimeoutSetEvent(ResponseEntry reply)
+			: base(reply)
 		{}
 	}
 	
@@ -105,8 +105,8 @@ namespace Torino
 		public int BytesRead => GetInt("@1");
 		public int BytesWritten => GetInt("@1");
 
-		internal BandwidthEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal BandwidthEvent(ResponseEntry reply)
+			: base(reply)
 		{}
 	}
 
@@ -124,8 +124,8 @@ namespace Torino
 		public string OutboundRemoved => GetString("OUTBOUNDREMOVED");
 		public string OutboundTime => GetString("OUTBOUNDTIME");
 
-		internal CellStatsEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal CellStatsEvent(ResponseEntry reply)
+			: base(reply)
 		{}
 	}
 
@@ -135,8 +135,8 @@ namespace Torino
 		public int BytesRead => GetInt("READ");
 		public int BytesWritten => GetInt("WRITTEN");
 
-		internal CircuitBandwidthEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal CircuitBandwidthEvent(ResponseEntry reply)
+			: base(reply)
 		{}
 	}
 	
@@ -155,8 +155,8 @@ namespace Torino
 		public string SocksUsername => GetString("SOCKS_USERNAME").Replace("\"", "");
 		public string SocksPassword => GetString("SOCKS_PASSWORD").Replace("\"", "");
 
-		internal CircuitEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal CircuitEvent(ResponseEntry reply)
+			: base(reply)
 		{
 			var path = GetString("@3"); 
 			Path = path.Contains("=") ? string.Empty : path;
@@ -176,8 +176,8 @@ namespace Torino
 		public CircPurpose OldPurpose => GetEnum<CircPurpose>("OLD_PURPOSE");
 		public CircHsState OldHsState => GetEnum<CircHsState>("OLD_HS_STATE");
 
-		internal CircuitMinorEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal CircuitMinorEvent(ResponseEntry reply)
+			:base(reply)
 		{
 			var path = GetString("@3"); 
 			Path = path.Contains("=") ? string.Empty : path;
@@ -190,15 +190,15 @@ namespace Torino
 		public string[] CountrySummary => GetArray("@2");
 		public string[] IPVersions  => GetArray("@3");
 
-		internal ClientsSeenEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal ClientsSeenEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
 	public class ConfChangedEvent : AsyncReply
 	{
-		internal ConfChangedEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal ConfChangedEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -209,15 +209,15 @@ namespace Torino
 		public int BytesRead => GetInt("READ");
 		public int BytesWritten => GetInt("WRITTEN");
 
-		internal ConnectionBandwidthEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal ConnectionBandwidthEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
 	public class DescChangedEvent : AsyncReply
 	{
-		internal DescChangedEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal DescChangedEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -227,15 +227,15 @@ namespace Torino
 		public string Name => GetString("@2");
 		public string Status => GetString("@3");
 
-		internal GuardEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal GuardEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
 	public class HiddenServiceDescriptorContentEvent : AsyncReply
 	{
-		internal HiddenServiceDescriptorContentEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal HiddenServiceDescriptorContentEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -250,8 +250,8 @@ namespace Torino
 		public string Replica => GetString("REPLICA");
 		public string HsDirIndex => GetString("HSDIR_INDEX");
 
-		internal HiddenServiceDescriptorEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal HiddenServiceDescriptorEvent(ResponseEntry reply)
+			:base(reply)
 		{
 			DescriptorID = GetString("@5");
 			if (DescriptorID.Contains("="))
@@ -265,42 +265,42 @@ namespace Torino
 	{
 		public string LogMessage => Line;
 
-		internal LogEvent(SingleLineReply reply)
-			: base(reply.Code, reply.Line)
+		internal LogEvent(ResponseEntry reply)
+			: base(reply)
 		{}
 	}
 
 	public class DebugLogEvent : LogEvent
 	{
-		internal DebugLogEvent(SingleLineReply reply)
+		internal DebugLogEvent(ResponseEntry reply)
 			: base(reply)
 		{}
 	}
 
 	public class ErrorLogEvent : LogEvent
 	{
-		internal ErrorLogEvent(SingleLineReply reply)
+		internal ErrorLogEvent(ResponseEntry reply)
 			: base(reply)
 		{}
 	}
 
 	public class InfoLogEvent : LogEvent
 	{
-		internal InfoLogEvent(SingleLineReply reply)
+		internal InfoLogEvent(ResponseEntry reply)
 			: base(reply)
 		{}
 	}
 
 	public class NoticeLogEvent : LogEvent
 	{
-		internal NoticeLogEvent(SingleLineReply reply)
+		internal NoticeLogEvent(ResponseEntry reply)
 			: base(reply)
 		{}
 	}
 
 	public class WarningLogEvent : LogEvent
 	{
-		internal WarningLogEvent(SingleLineReply reply)
+		internal WarningLogEvent(ResponseEntry reply)
 			: base(reply)
 		{}
 	}
@@ -309,15 +309,15 @@ namespace Torino
 	{
 		public string Status => Line;
 
-		internal NetworkLivenessEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal NetworkLivenessEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
 	public class NewConsensusEvent : AsyncReply
 	{
-		internal NewConsensusEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal NewConsensusEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -325,15 +325,15 @@ namespace Torino
 	{
 		public string[] ServerIDs => Line.Split(' ');
 
-		internal NewDescriptorsAvailableEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal NewDescriptorsAvailableEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
 	public class NsEvent : AsyncReply
 	{
-		internal NsEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal NsEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -345,8 +345,8 @@ namespace Torino
 		public int CircuitsCount => GetInt("NCIRCS");
 		public string Id => GetString("ID");
 
-		internal OrConnEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal OrConnEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -354,8 +354,8 @@ namespace Torino
 	{
 		public string Signal => Line;
 
-		internal SignalEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal SignalEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 	
@@ -365,30 +365,30 @@ namespace Torino
 		public string Action => GetString("@2");
 		public ReadOnlyDictionary<string, string> Arguments { get; }
 
-		internal StatusEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal StatusEvent(ResponseEntry reply)
+			:base(reply)
 		{
-			Arguments = new ReadOnlyDictionary<string, string>(Pairs);
+			Arguments = new ReadOnlyDictionary<string, string>(Entry.Pairs);
 		}
 	}
 
 	public class StatusClientEvent : StatusEvent
 	{
-		internal StatusClientEvent(SingleLineReply reply)
+		internal StatusClientEvent(ResponseEntry reply)
 			:base(reply)
 		{}
 	}
 
 	public class StatusGeneralEvent : StatusEvent
 	{
-		internal StatusGeneralEvent(SingleLineReply reply)
+		internal StatusGeneralEvent(ResponseEntry reply)
 			:base(reply)
 		{}
 	}
 
 	public class StatusServerEvent : StatusEvent
 	{
-		internal StatusServerEvent(SingleLineReply reply)
+		internal StatusServerEvent(ResponseEntry reply)
 			:base(reply)
 		{}
 	}
@@ -399,8 +399,8 @@ namespace Torino
 		public int BytesRead => GetInt("@2");
 		public int BytesWritten => GetInt("@3");
 
-		internal StreamBandwidthEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal StreamBandwidthEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -416,8 +416,8 @@ namespace Torino
 		public string SourceAddr => GetString("SOURCE_ADDR");
 		public StreamPurpose Purpose => GetEnum<StreamPurpose>("PURPOSE");
 
-		internal StreamEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal StreamEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 
@@ -429,8 +429,8 @@ namespace Torino
 		public int WriteBucket => GetInt("WRITTEN");
 		public int LastRefill => GetInt("LAST");
 
-		internal TokenBucketsEmptyEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal TokenBucketsEmptyEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}
 	
@@ -441,8 +441,8 @@ namespace Torino
 		public string Address => GetString("@3");
 		public string Port => GetString("@4");
 
-		internal TransportLaunchedEvent(SingleLineReply reply)
-			:base(reply.Code, reply.Line)
+		internal TransportLaunchedEvent(ResponseEntry reply)
+			:base(reply)
 		{}
 	}	
 }

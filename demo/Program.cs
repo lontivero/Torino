@@ -11,16 +11,27 @@ namespace Torino.Demo
 			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
+				var protocolInfo = await control.GetProtocolInfoAsync();
 				var version = await control.GetVersionAsync();
 				var user = await control.GetUserAsync();
+				var pid = await control.GetPidAsync();
 		
-				Console.WriteLine($"Tor version: {version}");
-				Console.WriteLine($"Tor user   : {user}");
+				Console.WriteLine($"Tor version   : {version}");
+				Console.WriteLine($"Tor user      : {user}");
+				Console.WriteLine($"Tor Process Id: {pid}");
+				Console.WriteLine();
+				Console.WriteLine($"Protocol");
+				Console.WriteLine($"  - Protocol Version: {protocolInfo.ProtocolVersion}");
+				Console.WriteLine($"  - Tor Version     : {protocolInfo.TorVersion}");
+				Console.WriteLine($"  - Auth methods    : {string.Join(", ", protocolInfo.AuthMethods)}");
+				Console.WriteLine($"  - Cookie file path: {protocolInfo.CookieFile}");
+				Console.WriteLine();
+				Console.WriteLine("Resolve domains");
 
 				var ip = await control.ResolveAsync("google.com");
 				var domain = await control.ResolveAsync(ip, isReverse: true);
-				Console.WriteLine($"google.com : {ip}");
-				Console.WriteLine($"{ip} : {domain}");
+				Console.WriteLine($"  - google.com   : {ip}");
+				Console.WriteLine($"  - {ip} : {domain}");
 				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 			}
 
@@ -28,16 +39,15 @@ namespace Torino.Demo
 			using(var control = new TorController())
 			{
 				await control.AuthenticateAsync("pwd");
-
-				await control.AddEventHandlerAsync(AsyncEvent.BW, 
-					(sender, e) => Console.WriteLine($"[EVENT] {e.Event} -> {e.Line}"));
+				var handler = new EventHandler<AsyncReply>((sender, e) => Console.WriteLine($"[EVENT] Bandwidth -> {e.Line}"));
+				await control.AddEventHandlerAsync(AsyncEvent.BW, handler);
 
 				await control.SignalAsync(Signal.DORMANT);
-				Console.WriteLine("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Time to sleep");
-				await Task.Delay(5_000);
-				Console.WriteLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Waking up");
 				await control.SignalAsync(Signal.ACTIVE);
-				await Task.Delay(3_000);
+
+				await Task.Delay(4_000);
+				await control.RemoveEventHandlerAsync(AsyncEvent.BW, handler); 
+
 				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 			}
 

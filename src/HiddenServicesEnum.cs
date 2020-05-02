@@ -24,4 +24,12 @@ namespace Torino
 		RSA1024,
 		ED25519V3
 	}
+
+	public enum AuthMethod
+	{
+		NULL,
+		HASHEDPASSWORD,
+		COOKIE,
+		SAFECOOKIE,
+	}
 }

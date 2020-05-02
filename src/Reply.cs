@@ -29,102 +29,27 @@ namespace Torino
 
 	public class SingleLineReply
 	{
-		public ReplyCode Code { get; }
-		public string Line { get; }
-		protected string[] Parts { get; }
-		protected IDictionary<string, string> Pairs { get; }
+		public ReplyCode Code => Entry.StatusCode; 
+		public string Line => Entry.Content;
 		public bool IsOK => Code == ReplyCode.OK;
-
+		public ResponseEntry Entry { get; }
 
 		internal SingleLineReply(Response response)
-			: this(response.Entries[0].StatusCode, response.Entries[0].Content)
+			: this(response.Entries[0])
 		{}
 
-		internal SingleLineReply(ReplyCode code, string line)
+		internal SingleLineReply(ResponseEntry entry)
 		{
-			Code = code;
-			Line = line;
-			Parts = SplitLine(line).ToArray();
-			Pairs = Parts.Where(x => x.Contains('=')).Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
+			Entry = entry;
 		}
 
-		private IEnumerable<string> SplitLine(string line)
-		{
-			var begin = 0;
-			var end = begin + 1;
-			var inQuote = false;
-
-			while (end < line.Length)
-			{
-				if (line[end] == '"')
-				{
-					inQuote = !inQuote;
-					end++;
-				}
-				else if (line[end] == ' ' && !inQuote)
-				{
-					yield return line.Substring(begin, end - begin);
-					begin = end + 1;
-					end = begin;
-				}
-				else
-				{
-					end++;
-				}
-			}
-			if (begin < end )
-			{
-				yield return line.Substring(begin);
-			}
-		}
-
-        internal string GetString(string key)
-		{
-			if (key[0] == '@')
-			{
-				var index = key[1] - '0';
-				if (Parts.Length > index)
-				{
-					return Parts[index];
-				}
-			}
-			else if (Pairs.TryGetValue(key, out var value))
-			{
-				return value;
-			}
-			return string.Empty;
-		}
-
-		internal string[] GetArray(string key)
-		{
-			return GetString(key).Split(',');
-		}
-
-		internal int GetInt(string key)
-		{
-			return int.Parse(GetString(key));
-		}
-
-		internal float GetFloat(string key)
-		{
-			return float.Parse(GetString(key));
-		}
-
+		internal string GetString(string key) => Entry.GetString(key);
+		internal string[] GetArray(string key) => Entry.GetArray(key);
+		internal int GetInt(string key) => Entry.GetInt(key);
+		internal float GetFloat(string key) => Entry.GetFloat(key);
+		internal DateTime GetISOTime(string key) => Entry.GetISOTime(key);
 		internal TEnum GetEnum<TEnum>(string key) where TEnum : struct
-		{
-			return Enum.Parse<TEnum>(GetString(key));
-		}
-
-		internal DateTime GetISOTime(string key)
-		{
-			var value = GetString(key);
-			return DateTime.Parse(value[1..^1]);
-		}
-
-		internal static SingleLineReply FromResponse((string statusCode, string divider, string content)[] response)
-		{
-			throw new NotImplementedException();
-		}
+			=> Entry.GetEnum<TEnum>(key);
 	}
 
 	public class MultiLineReply
@@ -151,7 +76,10 @@ namespace Torino
 					break;
 
 				var parts = entry.Content.Split('=', StringSplitOptions.RemoveEmptyEntries);
-				_values.Add(parts[0], parts[1]);
+				if (parts.Length > 1)
+				{
+					_values.Add(parts[0], parts[1]);
+				}
 			}
 		}
 	}
@@ -195,17 +123,57 @@ namespace Torino
 			}
 
 		}
+	}
 
-/*		
+	public class ProtocolInfoReply : MultiLineReply
+	{
+		public string ProtocolVersion { get; }
+		public string TorVersion { get; }
+		public AuthMethod[] AuthMethods { get; }
+		public string CookieFile { get; }
 
-		  self.private_key_type, self.private_key = value.split(':', 1)
-		elif key == 'ClientAuth':
-		  if ':' not in value:
-			raise stem.ProtocolError("ADD_ONION ClientAuth lines should be of the form 'ClientAuth=[username]:[credential]: %s" % self)
+		internal ProtocolInfoReply(Response response)
+			: base(response)
+		{
+			foreach(var entry in response.Entries)
+			{
+				var name = entry.GetString("@0");
+				switch(name)
+				{
+					case "PROTOCOLINFO":
+						ProtocolVersion = entry.GetString("@1");
+						break;
+					case "VERSION":
+						TorVersion = entry.GetString("Tor");
+						break;
+					case "AUTH":
+						AuthMethods = entry.GetArray("METHODS").Select(Enum.Parse<AuthMethod>).ToArray();
+						CookieFile = entry.GetString("COOKIEFILE");
+						break;
+				}
+			}
+		}
 
-		  username, credential = value.split(':', 1)
-		  self.client_auth[username] = credential
+/*
 
+    InfoLine = AuthLine / VersionLine / OtherLine
+
+     AuthLine = "250-AUTH" SP "METHODS=" AuthMethod *("," AuthMethod)
+                       *(SP "COOKIEFILE=" AuthCookieFile) CRLF
+     VersionLine = "250-VERSION" SP "Tor=" TorVersion OptArguments CRLF
+
+     AuthMethod =
+      "NULL"           / ; No authentication is required
+      "HASHEDPASSWORD" / ; A controller must supply the original password
+      "COOKIE"         / ; ... or supply the contents of a cookie file
+      "SAFECOOKIE"       ; ... or prove knowledge of a cookie file's contents
+
+     AuthCookieFile = QuotedString
+     TorVersion = QuotedString
+
+     OtherLine = "250-" Keyword OptArguments CRLF
+
+    PIVERSION: 1*DIGIT
 */
 	}
 }

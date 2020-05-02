@@ -64,6 +64,17 @@ namespace Torino
 			return (string)user;
 		}
 
+		public async Task<int> GetPidAsync(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (!_cache.TryGetValue("pid", out var pid))
+			{
+				var info = await GetInfoAsync("process/pid", cancellationToken);
+				pid = int.Parse(info["process/pid"]);
+				_cache.Add("pid", pid);
+			}
+			return (int)pid;
+		}
+
 		public async Task<MultiLineReply> GetInfoAsync(string param, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var reply = await SendCommandAsync(Command.GETINFO, param);
@@ -270,9 +281,16 @@ namespace Torino
 			return await tcs.Task;
 		}
 
-		public async Task DropGuards(CancellationToken cancellationToken = default(CancellationToken))
+		public async Task DropGuardsAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
 			await SendCommandAsync(Command.DROPGUARDS, cancellationToken: cancellationToken);
+		}
+
+		public async Task<ProtocolInfoReply> GetProtocolInfoAsync(CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var reply = await SendCommandAsync(Command.PROTOCOLINFO, cancellationToken: cancellationToken);
+			var protocolInfo = new ProtocolInfoReply(reply);
+			return protocolInfo;
 		}
 
 		public async Task CloseAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -338,7 +356,7 @@ namespace Torino
 
 					if (reply.Entries[0].StatusCode == ReplyCode.ASYNC_EVENT_NOTIFICATION)
 					{
-						var asyncEvent = AsyncReply.Parse(new SingleLineReply(reply));
+						var asyncEvent = AsyncReply.Parse(reply.Entries[0]);
 						_asyncEventNotificationChannel.Send(asyncEvent);
 					}
 					else

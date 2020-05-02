@@ -135,12 +135,89 @@ namespace Torino
 		public ReplyCode StatusCode { get; }
 		public string Divider { get; }
 		public string Content { get; }
+		protected string[] Parts { get; }
+		internal IDictionary<string, string> Pairs { get; }
 
 		public ResponseEntry(string statusCode, string divider, string content)
 		{
 			StatusCode = Enum.Parse<ReplyCode>(statusCode);
 			Divider = divider;
 			Content = content;
-		} 
+			Parts = SplitLine(content).ToArray();
+			Pairs = Parts.Where(x => x.Contains('=')).Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
+		}
+
+		private IEnumerable<string> SplitLine(string line)
+		{
+			var begin = 0;
+			var end = begin + 1;
+			var inQuote = false;
+
+			while (end < line.Length)
+			{
+				if (line[end] == '"')
+				{
+					inQuote = !inQuote;
+					end++;
+				}
+				else if (line[end] == ' ' && !inQuote)
+				{
+					yield return line.Substring(begin, end - begin);
+					begin = end + 1;
+					end = begin;
+				}
+				else
+				{
+					end++;
+				}
+			}
+			if (begin < end )
+			{
+				yield return line.Substring(begin);
+			}
+		}
+
+		internal string GetString(string key)
+		{
+			if (key[0] == '@')
+			{
+				var index = key[1] - '0';
+				if (Parts.Length > index)
+				{
+					return Parts[index];
+				}
+			}
+			else if (Pairs.TryGetValue(key, out var value))
+			{
+				return value;
+			}
+			return string.Empty;
+		}
+
+		internal string[] GetArray(string key)
+		{
+			return GetString(key).Split(',');
+		}
+
+		internal int GetInt(string key)
+		{
+			return int.Parse(GetString(key));
+		}
+
+		internal float GetFloat(string key)
+		{
+			return float.Parse(GetString(key));
+		}
+
+		internal TEnum GetEnum<TEnum>(string key) where TEnum : struct
+		{
+			return Enum.Parse<TEnum>(GetString(key));
+		}
+
+		internal DateTime GetISOTime(string key)
+		{
+			var value = GetString(key);
+			return DateTime.Parse(value[1..^1]);
+		}
 	}
 }
