@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -9,9 +10,10 @@ namespace Torino.Demo
 	{
 		static async Task Main(string[] args)
 		{
-			using(var control = new TorController())
+			var controlFilePath = Path.Combine(Path.GetTempPath(), "control-port-file");
+			using(var control = await TorController.UseControlPortFileAsync(controlFilePath))
 			{
-				await control.AuthenticateAsync("pwd");
+				await control.AuthenticateAsync("");
 				Console.WriteLine("General info");
 				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 				var protocolInfo = await control.GetProtocolInfoAsync();
@@ -38,9 +40,9 @@ namespace Torino.Demo
 				Console.WriteLine();
 			}
 
-			using(var control = new TorController())
+			using(var control = await TorController.UseControlPortFileAsync(controlFilePath))
 			{
-				await control.AuthenticateAsync("pwd");
+				await control.AuthenticateAsync("");
 				Console.WriteLine("Circuits");
 				Console.WriteLine("------------------------------------------------------------------------------------------------------");
 				var circuits = await control.GetCircuitsAsync();
@@ -64,8 +66,9 @@ namespace Torino.Demo
 				*/
 				Console.WriteLine();
 			}
+#if FALSE			
 
-			using(var control = new TorController())
+			using(var control = await TorController.UseControlPortFileAsync(controlFilePath))
 			{
 				await control.AuthenticateAsync("pwd");
 				Console.WriteLine("Bandwidth event (Read/Write)");
@@ -87,7 +90,7 @@ namespace Torino.Demo
 			}
 
 
-			using(var control = new TorController())
+			using(var control = await TorController.UseControlPortFileAsync(controlFilePath))
 			{
 				await control.AuthenticateAsync("pwd");
 				Console.WriteLine("Ephemeral Hidden Services");
@@ -130,12 +133,17 @@ namespace Torino.Demo
 
 				Console.WriteLine();
 			}
+#endif
 
-			using(var control = new TorController())
+			using(var control = await TorController.UseControlPortFileAsync(controlFilePath))
 			{
-				await control.AuthenticateAsync("pwd");
+				await control.AuthenticateAsync("");
 				var handler = new EventHandler<AsyncReply>((sender, e) =>
-					Console.WriteLine($"[EVENT] {e.Event} -> {e.Line.Substring(0, Math.Min(110, e.Line.Length))}"));
+					Console.WriteLine($"[EVENT] {e.Event} -> {e.Line.Substring(0, Math.Min(110, e.Line.Length))} {e.RawString}"));
+
+				var handler2 = new EventHandler<AsyncReply>((sender, e) =>{
+					Console.WriteLine(e.Line);
+				});
 
 				Console.WriteLine("Events");
 				Console.WriteLine("------------------------------------------------------------------------------------------------------");
@@ -146,9 +154,9 @@ namespace Torino.Demo
 				await control.RemoveEventHandlerAsync(AsyncEvent.CIRC, handler); 
 
 				Console.WriteLine("Stream events....");
-				await control.AddEventHandlerAsync(AsyncEvent.STREAM, handler);
-				await Task.Delay(6_000);
-				await control.RemoveEventHandlerAsync(AsyncEvent.STREAM, handler); 
+				await control.AddEventHandlerAsync(AsyncEvent.STREAM, handler2);
+				await Task.Delay(16_000);
+				await control.RemoveEventHandlerAsync(AsyncEvent.STREAM, handler2); 
 
 				Console.WriteLine("Debug events....");
 				await control.AddEventHandlerAsync(AsyncEvent.DEBUG, handler);

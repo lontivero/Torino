@@ -4,27 +4,42 @@ using System.Net;
 using System.Threading;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Text;
 
 namespace Torino
 {
 	public class TorController : IDisposable
 	{
+		private const int DEFAULT_TOR_CONTROL_PORT = 9051;
+
 		private ControlSocket _controlSocket;
-		private Channel<Response> _replyChannel = new Channel<Response>();
-		private Channel<AsyncReply> _asyncEventNotificationChannel = new Channel<AsyncReply>();
-		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new Dictionary<AsyncEvent, EventHandler<AsyncReply>>(); 
-		private Dictionary<string, object> _cache = new Dictionary<string, object>();
-		private CancellationTokenSource _cancellation = new CancellationTokenSource();
+		private Channel<Response> _replyChannel = new();
+		private Channel<AsyncReply> _asyncEventNotificationChannel = new();
+		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new(); 
+		private Dictionary<string, object> _cache = new();
+		private CancellationTokenSource _cancellation = new();
 		private DateTime _lastNewnym;
 
 		public bool IsAuthenticated { get; private set; }
 
 
 		public TorController()
-			: this(IPAddress.Loopback, 9051)
+			: this(IPAddress.Loopback, DEFAULT_TOR_CONTROL_PORT)
 		{}
 
-		public TorController(IPAddress address, int port = 9051)
+		public static async Task<TorController> UseControlPortFileAsync(string controlPortFilePath)
+		{
+			var content = await File.ReadAllLinesAsync(controlPortFilePath).ConfigureAwait(false);
+			var endpointStr = content[0]["PORT=".Length..];
+			if (!IPEndPoint.TryParse(endpointStr, out var ipendpoint))
+			{
+				throw new FormatException("Unsupported endpoint format.");
+			}
+			return new TorController(ipendpoint);
+		}
+
+		public TorController(IPAddress address, int port = DEFAULT_TOR_CONTROL_PORT)
 			: this(new IPEndPoint(address, port))
 		{}
 
@@ -58,20 +73,52 @@ namespace Torino
 		{
 			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
 			{
+#pragma warning disable CS8601
 				_asyncEventHandler[asyncEvent] -= handler;
+#pragma warning restore CS8601
 				if (_asyncEventHandler[asyncEvent] is null)
 				{
 					_asyncEventHandler.Remove(asyncEvent);
 				}
-				await SetSubscribedEventsAsync(cancellationToken);
+				await SetSubscribedEventsAsync(cancellationToken).ConfigureAwait(false);
 			}
 		}
 
 		public async Task AuthenticateAsync(string password, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			password ??= string.Empty;
+			var protocolInfo = await GetProtocolInfoAsync(cancellationToken).ConfigureAwait(false);
+			var authString = "";
+			if (protocolInfo.AuthMethods.Contains(AuthMethod.HASHEDPASSWORD) && !string.IsNullOrEmpty(password))
+			{
+				authString = $"\"{password}\"";
+			}
+			else if (protocolInfo.AuthMethods.Contains(AuthMethod.COOKIE) && !string.IsNullOrEmpty(protocolInfo.CookieFile))
+			{
+				static string ToHex(byte[] bytes)
+				{
+					var result = new StringBuilder(bytes.Length * 2);
+					var hexAlphabet = "0123456789ABCDEF";
 
-			await SendCommandAsync(Command.AUTHENTICATE, $"\"{password}\"", cancellationToken);
+					foreach (byte b in bytes)
+					{
+						result.Append(hexAlphabet[b >> 4]);
+						result.Append(hexAlphabet[b & 0xF]);
+					}
+
+					return result.ToString();
+				}
+				authString = ToHex(File.ReadAllBytes(protocolInfo.CookieFile[1..^1]));
+			}
+			else if (protocolInfo.AuthMethods.Contains(AuthMethod.NULL))
+			{
+				authString = "";
+			}
+			else
+			{
+				throw new NotSupportedException("Not supported authentication method.");
+			}
+
+			await SendCommandAsync(Command.AUTHENTICATE, $"{authString}", cancellationToken).ConfigureAwait(false);
 			IsAuthenticated = true;
 		}
 
@@ -79,7 +126,7 @@ namespace Torino
 		{
 			if (!_cache.TryGetValue("version", out var version))
 			{
-				var info = await GetInfoAsync("version", cancellationToken);
+				var info = await GetInfoAsync("version", cancellationToken).ConfigureAwait(false);
 				version = info["version"];
 				_cache.Add("version", version);
 			}
@@ -90,7 +137,7 @@ namespace Torino
 		{
 			if (!_cache.TryGetValue("user", out var user))
 			{
-				var info = await GetInfoAsync("process/user", cancellationToken);
+				var info = await GetInfoAsync("process/user", cancellationToken).ConfigureAwait(false);
 				user = info["process/user"];
 				_cache.Add("user", user);
 			}
@@ -101,7 +148,7 @@ namespace Torino
 		{
 			if (!_cache.TryGetValue("pid", out var pid))
 			{
-				var info = await GetInfoAsync("process/pid", cancellationToken);
+				var info = await GetInfoAsync("process/pid", cancellationToken).ConfigureAwait(false);
 				pid = int.Parse(info["process/pid"]);
 				_cache.Add("pid", pid);
 			}
@@ -110,13 +157,13 @@ namespace Torino
 
 		public async Task<MultiLineReply> GetInfoAsync(string param, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var reply = await SendCommandAsync(Command.GETINFO, param);
+			var reply = await SendCommandAsync(Command.GETINFO, param).ConfigureAwait(false);
 			return new MultiLineReply(reply);
 		}
 
 		public async Task SignalAsync(Signal signal, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var reply = await SendCommandAsync(Command.SIGNAL, signal.ToString(), cancellationToken);
+			var reply = await SendCommandAsync(Command.SIGNAL, signal.ToString(), cancellationToken).ConfigureAwait(false);
 			var singleLine = new SingleLineReply(reply);
 
 			if (singleLine.IsOK && signal == Signal.NEWNYM)
@@ -150,14 +197,18 @@ namespace Torino
 
 			var uploading = new HashSet<string>();
 			var failures = 0;
-			void Test(object sender, AsyncReply e)
+
+			void HiddenServicePublicationHandler(object? sender, AsyncReply e)
 			{
-				var hsDescEvent = e as HiddenServiceDescriptorEvent;
-				if (hsDescEvent.Action == HsDescActions.UPLOADED && hsDescEvent.Address == serviceId && uploading.Contains(hsDescEvent.HsDir))
+				if ( e is not HiddenServiceDescriptorEvent hsDescEvent || hsDescEvent.Address == serviceId)
+				{
+					return;
+				}
+				if (hsDescEvent.Action == HsDescActions.UPLOADED && uploading.Contains(hsDescEvent.HsDir))
 				{
 					publication.TrySetResult(uploading.Count);
 				}
-				else if (hsDescEvent.Action == HsDescActions.FAILED && hsDescEvent.Address == serviceId && uploading.Contains(hsDescEvent.HsDir))
+				else if (hsDescEvent.Action == HsDescActions.FAILED && uploading.Contains(hsDescEvent.HsDir))
 				{
 					failures++;
 					if (failures == uploading.Count())
@@ -165,7 +216,7 @@ namespace Torino
 						publication.TrySetException(new Exception($"Fail to publish hidden servive: {serviceId}"));
 					}
 				}
-				else if (hsDescEvent.Action == HsDescActions.UPLOAD && hsDescEvent.Address == serviceId)
+				else if (hsDescEvent.Action == HsDescActions.UPLOAD)
 				{
 					uploading.Add(hsDescEvent.HsDir);
 				}
@@ -173,7 +224,7 @@ namespace Torino
 
 			if (waitForPublication)
 			{
-				await AddEventHandlerAsync(AsyncEvent.HS_DESC, Test);
+				await AddEventHandlerAsync(AsyncEvent.HS_DESC, HiddenServicePublicationHandler).ConfigureAwait(false);
 			}
 
 			var request = $"{keyType}:{keyBob}";
@@ -196,21 +247,14 @@ namespace Torino
 				request = $"{request} MaxStreams={maxStreams}";
 			}
 
-			var portMappingList = new List<string>(); 
-			foreach(var portMapping in ports)
-			{
-				if (portMapping.Key == portMapping.Value)
-				{
-					portMappingList.Add($"Port={portMapping.Key}");
-				}
-				else
-				{
-					portMappingList.Add($"Port={portMapping.Key}:{portMapping.Value}");
-				}
-			}
+			var portMappingList = ports.Select(portMapping => 
+				portMapping.Key == portMapping.Value
+					? $"Port={portMapping.Key}"
+					: $"Port={portMapping.Key}:{portMapping.Value}");
+
 			request = $"{request} {string.Join(" ", portMappingList)}";
 
-			var reply = await SendCommandAsync(Command.ADD_ONION, request, cancellationToken);
+			var reply = await SendCommandAsync(Command.ADD_ONION, request, cancellationToken).ConfigureAwait(false);
 			var hsReply = new HiddenServiceReply(reply);
 			serviceId = hsReply.ServiceId;
 
@@ -222,7 +266,7 @@ namespace Torino
 				}
 				finally
 				{
-					await RemoveEventHandlerAsync(AsyncEvent.HS_DESC, Test);
+					await RemoveEventHandlerAsync(AsyncEvent.HS_DESC, HiddenServicePublicationHandler).ConfigureAwait(false);
 				}
 			}
 			return new HiddenServiceReply(reply);
@@ -233,13 +277,13 @@ namespace Torino
 			bool includeDetached = false, 
 			CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var reply = await GetInfoAsync("onions/current");
+			var reply = await GetInfoAsync("onions/current").ConfigureAwait(false);
 			var hsList = new List<string>();
 			hsList.AddRange(reply.Keys.Skip(1).Select(key => reply[key]));
 
 			if (includeDetached)
 			{
-				reply = await GetInfoAsync("onions/detached");
+				reply = await GetInfoAsync("onions/detached").ConfigureAwait(false);
 				hsList.AddRange(reply.Keys.Skip(1).Select(key => reply[key]));
 			}
 			return hsList.ToArray();
@@ -249,33 +293,32 @@ namespace Torino
 			string serviceId,
 			CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var reply = await SendCommandAsync(Command.DEL_ONION, serviceId, cancellationToken);
+			var reply = await SendCommandAsync(Command.DEL_ONION, serviceId, cancellationToken).ConfigureAwait(false);
 			return reply.IsOk;
 		}
 
 		public async Task<string> ResolveAsync(string address, bool isReverse = false, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var tcs = new TaskCompletionSource<string>();
-			async void Test(object sender, AsyncReply e)
+			async void Test(object? sender, AsyncReply e)
 			{
-				var addmapEvent = e as NewAddressMappingEvent;
-				if (addmapEvent.Address == address)
+				if (e is NewAddressMappingEvent addmapEvent && addmapEvent.Address == address)
 				{
 					tcs.TrySetResult(addmapEvent.NewAddress);
 					if (!_cancellation.IsCancellationRequested)
 					{
-						await RemoveEventHandlerAsync(AsyncEvent.ADDRMAP, Test, cancellationToken);
+						await RemoveEventHandlerAsync(AsyncEvent.ADDRMAP, Test, cancellationToken).ConfigureAwait(false);
 					}
 				}
 			}
-			await AddEventHandlerAsync(AsyncEvent.ADDRMAP, Test, cancellationToken);
+			await AddEventHandlerAsync(AsyncEvent.ADDRMAP, Test, cancellationToken).ConfigureAwait(false);
 
 			var args = $"{address}";
 			if (isReverse)
 			{
 				args = $"mode=reverse {args}";
 			}
-			var reply = await SendCommandAsync(Command.RESOLVE, args, cancellationToken);
+			var reply = await SendCommandAsync(Command.RESOLVE, args, cancellationToken).ConfigureAwait(false);
 
 			return await tcs.Task;
 		}
@@ -287,40 +330,39 @@ namespace Torino
 
 		public async Task<ProtocolInfoReply> GetProtocolInfoAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var reply = await SendCommandAsync(Command.PROTOCOLINFO, cancellationToken: cancellationToken);
+			var reply = await SendCommandAsync(Command.PROTOCOLINFO, cancellationToken: cancellationToken).ConfigureAwait(false);
 			var protocolInfo = new ProtocolInfoReply(reply);
 			return protocolInfo;
 		}
 
 		public async Task LoadConfigAsync(string configPath, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			await SendCommandAsync(Command.LOADCONF, configPath, cancellationToken: cancellationToken);
+			await SendCommandAsync(Command.LOADCONF, configPath, cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 
 		public async Task SaveConfigAsync(bool force = false, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			await SendCommandAsync(Command.SAVECONF, force ? "force": "", cancellationToken: cancellationToken);
+			await SendCommandAsync(Command.SAVECONF, force ? "force": "", cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 
 		public async Task<CircuitEvent[]> GetCircuitsAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var reply = await GetInfoAsync("circuit-status", cancellationToken);
+			var reply = await GetInfoAsync("circuit-status", cancellationToken).ConfigureAwait(false);
 			return reply.Keys.Skip(1).Select(key => new CircuitEvent(reply[key])).ToArray();
 		}
 
-		private object GetCached<T>(string key, string @namespace = null)
+
+		private bool TryGetCached<T>(string key, string @namespace, out T? value)
 		{
 			var lookupKey = string.IsNullOrWhiteSpace(@namespace)
 				? key
 				: $"{@namespace}:{key}";
-			if(_cache.TryGetValue(lookupKey, out var value))
-			{
-				return (T)value;
-			}
-			return default(T);
+			var ret = _cache.TryGetValue(lookupKey, out var cachedValue);
+			value = (T?)cachedValue;
+			return ret; ;
 		}
 
-		private Dictionary<string, object> GetCachedValues(string[] keys, string @namespace = null)
+		private Dictionary<string, object> GetCachedValues(string[] keys, string @namespace = "")
 		{
 			var ret = new Dictionary<string, object>();
 			foreach(var key in keys)
@@ -338,7 +380,7 @@ namespace Torino
 
 		public async Task CloseAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
-			await SendCommandAsync(Command.QUIT, cancellationToken: cancellationToken);
+			await SendCommandAsync(Command.QUIT, cancellationToken: cancellationToken).ConfigureAwait(false);
 			this._controlSocket.Close();
 		}
 
@@ -348,7 +390,7 @@ namespace Torino
 			this._controlSocket.Close();
 		}
 
-		private async Task<Response> SendCommandAsync(Command command, string args = null, CancellationToken cancellationToken = default(CancellationToken))
+		private async Task<Response> SendCommandAsync(Command command, string args = "", CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var nextReply = CleanReplyChannelAsync(cancellationToken);
 			var request = $"{command}";
@@ -356,7 +398,7 @@ namespace Torino
 			{
 				request = $"{request} {args}";
 			}
-			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken);
+			await _controlSocket.SendAsync($"{request}\r\n", cancellationToken).ConfigureAwait(false);
 			var reply = await nextReply;
 
 			var sl = new SingleLineReply(reply);
@@ -370,10 +412,10 @@ namespace Torino
 
 		private Task<Response> CleanReplyChannelAsync(CancellationToken cancellationToken)
 		{
-			var replyTask =  _replyChannel.TakeAsync();
+			var replyTask =  _replyChannel.TakeAsync(cancellationToken);
 			while (replyTask.Status == TaskStatus.RanToCompletion)
 			{
-				replyTask =  _replyChannel.TakeAsync();
+				replyTask =  _replyChannel.TakeAsync(cancellationToken);
 			}
 			return replyTask;
 		}
@@ -385,7 +427,7 @@ namespace Torino
 
 		private async Task SetSubscribedEventsAsync(CancellationToken cancellationToken)
 		{
-			await SendCommandAsync(Command.SETEVENTS, string.Join(" ", GetSettledAsyncEventNames()), cancellationToken);
+			await SendCommandAsync(Command.SETEVENTS, string.Join(" ", GetSettledAsyncEventNames()), cancellationToken).ConfigureAwait(false);
 		}
 
 		private void StartListening()
@@ -414,14 +456,14 @@ namespace Torino
 				while (true)
 				{
 					if (_cancellation.Token.IsCancellationRequested) break;
-					var asyncEvent = await _asyncEventNotificationChannel.TakeAsync(_cancellation.Token);
+					var asyncEvent = await _asyncEventNotificationChannel.TakeAsync(_cancellation.Token).ConfigureAwait(false);
 
 					if (_asyncEventHandler.TryGetValue(asyncEvent.Event, out var handler))
 					{
 						handler?.Invoke(this, asyncEvent);
 					}
 				}
-			},  _cancellation.Token);
+			}, _cancellation.Token);
 		}
 	}
 }

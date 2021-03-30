@@ -4,5 +4,5 @@
 **/[Bb]in/
 **/[Oo]bj/
 *.log
-tor/**/
-.ionide/**/
+tor/
+.ionide/
