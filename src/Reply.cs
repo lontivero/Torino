@@ -144,6 +144,7 @@ namespace Torino
 		public AuthMethod[] AuthMethods { get; }
 		public string CookieFile { get; }
 
+#pragma warning disable CS8618
 		internal ProtocolInfoReply(Response response)
 			: base(response)
 		{
@@ -165,5 +166,6 @@ namespace Torino
 				}
 			}
 		}
+#pragma warning restore CS8618
 	}
 }

@@ -13,6 +13,8 @@ namespace Torino
 {
 	public class ControlSocket
 	{
+		private static Regex MessagePrefix = new Regex("^[a-zA-Z0-9]{3}[-+ ]", RegexOptions.Compiled);
+
 		private Stream _stream;
 		private StreamReader _reader;
 
@@ -20,19 +22,16 @@ namespace Torino
 		{
 			var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
 			socket.Connect(endPoint);
-			SetStream(new NetworkStream(socket));
+			_stream = new NetworkStream(socket);
+			_reader = new StreamReader(_stream);
 		}
 
 		public ControlSocket(Stream stream)
 		{
-			SetStream(stream);
-		}
-
-		private void SetStream(Stream stream)
-		{
 			_stream = stream;
 			_reader = new StreamReader(_stream);
 		}
+
 
 		public void Close()
 		{
@@ -42,20 +41,18 @@ namespace Torino
 		public async ValueTask SendAsync(string message, CancellationToken cancellationToken)
 		{
 			var buffer = new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(message));
-			await _stream.WriteAsync(buffer, cancellationToken);
+			await _stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
 		}
-
-		private static Regex MessagePrefix = new Regex("^[a-zA-Z0-9]{3}[-+ ]", RegexOptions.Compiled);
 
 		public async Task<Response> ReceiveAsync(CancellationToken cancellationToken = default(CancellationToken))
 		{
-			List<ResponseEntry> parsed = null;
+			var parsed = new List<ResponseEntry>();;
 			var line = "";
 			var isFirstLine = true;
 
 			while (true)
 			{
-				line = await _reader.ReadLineAsync();
+				line = await _reader.ReadLineAsync().ConfigureAwait(false);
 
 				if (line is null)
 				{
@@ -78,7 +75,6 @@ namespace Torino
 					}
 
 					isFirstLine = false;
-					parsed = new List<ResponseEntry>();
 				}
 				
 				if (divider == "-") // mid-reply line, keep pulling for more content

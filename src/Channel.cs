@@ -6,8 +6,8 @@ namespace Torino
 {
 	public class Channel<T>
 	{
-		private readonly ConcurrentQueue<T> _queue = new ConcurrentQueue<T>();
-		private readonly ConcurrentQueue<TaskCompletionSource<T>> _waitingQueue = new ConcurrentQueue<TaskCompletionSource<T>>();
+		private readonly ConcurrentQueue<T> _queue = new();
+		private readonly ConcurrentQueue<TaskCompletionSource<T>> _waitingQueue = new();
 
 		public void Send(T item)
 		{
