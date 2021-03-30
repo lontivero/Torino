@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <PlatformTarget>x64</PlatformTarget>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
     <LangVersion>latest</LangVersion>
     <NoWarn>1701;1702;1705;1591;1573;CA1031</NoWarn>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OutputType>Library</OutputType>
+		<AnalysisLevel>latest</AnalysisLevel>
+		<Nullable>enable</Nullable>
     <StartupObject />
   </PropertyGroup>
 
