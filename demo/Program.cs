@@ -10,7 +10,15 @@ namespace Torino.Demo
 	{
 		static async Task Main(string[] args)
 		{
-			var controlFilePath = Path.Combine(Path.GetTempPath(), "control-port-file");
+			var launcher = new TorLauncher();
+			launcher.OnProgress += (s,e) =>
+			{
+				Console.SetCursorPosition(0, Console.CursorTop);
+				var progress = Enumerable.Range(0, e).Where(x => x % 10 == 0).Select(x => $"{x}%");
+				Console.Write($"Bootstrapping: {string.Join(" ", progress)}");
+			};
+			using var torProcess = await launcher.LaunchAsync();
+			var controlFilePath = launcher.Arguments["--ControlPortWriteToFile"];
 			using(var control = await TorController.UseControlPortFileAsync(controlFilePath))
 			{
 				await control.AuthenticateAsync("");
