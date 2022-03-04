@@ -76,7 +76,7 @@ namespace Torino
 
 					isFirstLine = false;
 				}
-				
+
 				if (divider == "-") // mid-reply line, keep pulling for more content
 				{
 					parsed.Add(current);

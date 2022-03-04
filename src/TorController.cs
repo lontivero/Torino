@@ -7,6 +7,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 namespace Torino
 {
@@ -17,13 +19,12 @@ namespace Torino
 		private ControlSocket _controlSocket;
 		private Channel<Response> _replyChannel = new();
 		private Channel<AsyncReply> _asyncEventNotificationChannel = new();
-		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new(); 
+		private Dictionary<AsyncEvent, EventHandler<AsyncReply>> _asyncEventHandler = new();
 		private Dictionary<string, object> _cache = new();
 		private CancellationTokenSource _cancellation = new();
 		private DateTime _lastNewnym;
 
 		public bool IsAuthenticated { get; private set; }
-
 
 		public TorController()
 			: this(IPAddress.Loopback, DEFAULT_TOR_CONTROL_PORT)
@@ -51,8 +52,8 @@ namespace Torino
 		}
 
 		public Task AddEventHandlerAsync(
-			AsyncEvent asyncEvent, 
-			EventHandler<AsyncReply> handler, 
+			AsyncEvent asyncEvent,
+			EventHandler<AsyncReply> handler,
 			CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
@@ -68,8 +69,8 @@ namespace Torino
 		}
 
 		public async Task RemoveEventHandlerAsync(
-			AsyncEvent asyncEvent, 
-			EventHandler<AsyncReply> handler, 
+			AsyncEvent asyncEvent,
+			EventHandler<AsyncReply> handler,
 			CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (_asyncEventHandler.TryGetValue(asyncEvent, out var existingHandler))
@@ -95,20 +96,34 @@ namespace Torino
 			}
 			else if (protocolInfo.AuthMethods.Contains(AuthMethod.COOKIE) && !string.IsNullOrEmpty(protocolInfo.CookieFile))
 			{
-				static string ToHex(byte[] bytes)
-				{
-					var result = new StringBuilder(bytes.Length * 2);
-					var hexAlphabet = "0123456789ABCDEF";
-
-					foreach (byte b in bytes)
-					{
-						result.Append(hexAlphabet[b >> 4]);
-						result.Append(hexAlphabet[b & 0xF]);
-					}
-
-					return result.ToString();
-				}
 				authString = ToHex(File.ReadAllBytes(protocolInfo.CookieFile[1..^1]));
+			}
+			else if (protocolInfo.AuthMethods.Contains(AuthMethod.SAFECOOKIE) && !string.IsNullOrEmpty(protocolInfo.CookieFile))
+			{
+				var rnd = new Random();
+				byte[] nonceBytes = new byte[32];
+				rnd.NextBytes(nonceBytes);
+				var clientNonce = ToHex(nonceBytes);
+				authString = $"SAFECOOKIE {clientNonce}";
+
+				var response = await SendCommandAsync(Command.AUTHCHALLENGE, $"{authString}", cancellationToken).ConfigureAwait(false);
+				if (!response.IsOk)
+				{
+					throw new Exception("Authentication failed.");
+				}
+
+				var authChallengeRegex = new Regex($"^AUTHCHALLENGE SERVERHASH=([a-fA-F0-9]+) SERVERNONCE=([a-fA-F0-9]+)$");
+
+				var match = authChallengeRegex.Match(response.Entries[0].Content);
+				var serverHash = match.Groups[1].Value;
+				var serverNonce = match.Groups[2].Value;
+				var cookieString = ToHex(File.ReadAllBytes(protocolInfo.CookieFile[1..^1]));
+				var toHash = $"{cookieString}{clientNonce}{serverNonce}";
+
+				var clientHmacKey = Encoding.ASCII.GetBytes("Tor safe cookie authentication");
+				using HMACSHA256 hmacSha256 = new(clientHmacKey);
+				var computedServerHash = hmacSha256.ComputeHash(FromHex(toHash));
+				authString = ToHex(computedServerHash);
 			}
 			else if (protocolInfo.AuthMethods.Contains(AuthMethod.NULL))
 			{
@@ -119,8 +134,8 @@ namespace Torino
 				throw new NotSupportedException("Not supported authentication method.");
 			}
 
-			await SendCommandAsync(Command.AUTHENTICATE, $"{authString}", cancellationToken).ConfigureAwait(false);
-			IsAuthenticated = true;
+			var authResponse = await SendCommandAsync(Command.AUTHENTICATE, $"{authString}", cancellationToken).ConfigureAwait(false);
+			IsAuthenticated  = authResponse.IsOk;
 		}
 
 		public async Task<string> GetVersionAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -174,20 +189,20 @@ namespace Torino
 		}
 
 		public Task<HiddenServiceReply> CreateEphemeralHiddenServiceAsync(
-			string port, 
-			OnionKeyType keyType = OnionKeyType.NEW, 
-			OnionKeyBlob keyBob = OnionKeyBlob.BEST, 
+			string port,
+			OnionKeyType keyType = OnionKeyType.NEW,
+			OnionKeyBlob keyBob = OnionKeyBlob.BEST,
 			OnionFlags flags = OnionFlags.None,
 			int maxStreams = 0,
 			bool waitForPublication = false,
-			CancellationToken cancellationToken = default(CancellationToken)) => 
-				CreateEphemeralHiddenServiceAsync( new Dictionary<string, string>{ { port, port} }, 
+			CancellationToken cancellationToken = default(CancellationToken)) =>
+				CreateEphemeralHiddenServiceAsync( new Dictionary<string, string>{ { port, port} },
 					keyType, keyBob, flags, maxStreams, waitForPublication, cancellationToken);
 
 		public async Task<HiddenServiceReply> CreateEphemeralHiddenServiceAsync(
-			IDictionary<string, string> ports, 
-			OnionKeyType keyType = OnionKeyType.NEW, 
-			OnionKeyBlob keyBob = OnionKeyBlob.BEST, 
+			IDictionary<string, string> ports,
+			OnionKeyType keyType = OnionKeyType.NEW,
+			OnionKeyBlob keyBob = OnionKeyBlob.BEST,
 			OnionFlags flags = OnionFlags.None,
 			int maxStreams = 0,
 			bool waitForPublication = false,
@@ -234,7 +249,7 @@ namespace Torino
 				OnionFlags.Detach => "Flags=Detach",
 				OnionFlags.DiscardPK => "Flags=DiscardPK",
 				OnionFlags.Detach | OnionFlags.DiscardPK => "Flags=Detach,DiscardPK",
-				_ => null 
+				_ => null
 			};
 
 
@@ -248,7 +263,7 @@ namespace Torino
 				request = $"{request} MaxStreams={maxStreams}";
 			}
 
-			var portMappingList = ports.Select(portMapping => 
+			var portMappingList = ports.Select(portMapping =>
 				portMapping.Key == portMapping.Value
 					? $"Port={portMapping.Key}"
 					: $"Port={portMapping.Key}:{portMapping.Value}");
@@ -275,7 +290,7 @@ namespace Torino
 
 
 		public async Task<string[]> ListEphemeralHiddenServicesAsync(
-			bool includeDetached = false, 
+			bool includeDetached = false,
 			CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var reply = await GetInfoAsync("onions/current").ConfigureAwait(false);
@@ -465,6 +480,35 @@ namespace Torino
 					}
 				}
 			}, _cancellation.Token);
+		}
+
+		private static string ToHex(byte[] bytes)
+		{
+			var result = new StringBuilder(bytes.Length * 2);
+			var hexAlphabet = "0123456789ABCDEF";
+
+			foreach (byte b in bytes)
+			{
+				result.Append(hexAlphabet[b >> 4]);
+				result.Append(hexAlphabet[b & 0xF]);
+			}
+
+			return result.ToString();
+		}
+
+		private static byte[] FromHex(string hex)
+		{
+			if (hex.Length % 2 != 0)
+			{
+				throw new ArgumentException("Hex string must have an even length.");
+			}
+
+			var result = new byte[hex.Length / 2];
+			for (int i = 0; i < hex.Length; i += 2)
+			{
+				result[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
+			}
+			return result;
 		}
 	}
 }
